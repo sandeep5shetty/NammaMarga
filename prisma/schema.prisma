@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CITIZEN
+  AUTHORITY
+  ADMIN
+  CONTRACTOR
+}
+
+enum IssueType {
+  POTHOLE
+  GARBAGE
+  SEWAGE
+  WATER_LEAK
+  STREETLIGHT
+  ROAD_DAMAGE
+  TRAFFIC_SIGNAL
+  FALLEN_TREE
+  OTHER
+}
+
+enum IssueStatus {
+  REPORTED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  VERIFIED
+  REJECTED
+  MERGED
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  ISSUE_UPDATE
+  VERIFICATION_REQUEST
+  STATUS_CHANGE
+  SYSTEM
+}
+
+enum TenderStatus {
+  DRAFT
+  OPEN
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  supabaseId    String?   @unique
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(CITIZEN)
+  reputation    Int       @default(0)
+  badges        String[]  @default([])
+  phone         String?
+  wardId        String?
+  ward          Ward?     @relation(fields: [wardId], references: [id])
+
+  issues         Issue[]        @relation("ReportedIssues")
+  assignedIssues Issue[]        @relation("AssignedIssues")
+  verifications  Verification[]
+  comments       Comment[]
+  notifications  Notification[]
+  activityLogs   ActivityLog[]
+  watchlists     Watchlist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([role])
+  @@index([wardId])
+}
+
+model Ward {
+  id        String   @id @default(cuid())
+  name      String
+  number    Int      @unique
+  zone      String
+  latitude  Float
+  longitude Float
+  users     User[]
+  issues    Issue[]
+  createdAt DateTime @default(now())
+}
+
+model Issue {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  type        IssueType
+  status      IssueStatus @default(REPORTED)
+  severity    Severity    @default(MEDIUM)
+  confidence  Float       @default(0)
+  aiSummary   String?
+
+  imageUrl    String
+  afterImageUrl String?
+
+  latitude  Float
+  longitude Float
+  address   String?
+
+  wardId String?
+  ward   Ward?   @relation(fields: [wardId], references: [id])
+
+  reporterId String
+  reporter   User   @relation("ReportedIssues", fields: [reporterId], references: [id])
+
+  assigneeId String?
+  assignee   User?   @relation("AssignedIssues", fields: [assigneeId], references: [id])
+
+  contractorId String?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+
+  tenderId String?
+  tender   Tender? @relation(fields: [tenderId], references: [id])
+
+  duplicateOfId String?
+  duplicateOf   Issue?  @relation("DuplicateIssues", fields: [duplicateOfId], references: [id])
+  duplicates    Issue[] @relation("DuplicateIssues")
+
+  reportCount Int @default(1)
+
+  verifications Verification[]
+  comments      Comment[]
+  activityLogs  ActivityLog[]
+
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([severity])
+  @@index([wardId])
+  @@index([latitude, longitude])
+  @@index([reporterId])
+  @@index([createdAt])
+}
+
+model Verification {
+  id           String             @id @default(cuid())
+  issueId      String
+  issue        Issue              @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  verifierId   String
+  verifier     User               @relation(fields: [verifierId], references: [id])
+  imageUrl     String
+  status       VerificationStatus @default(PENDING)
+  confidence   Float              @default(0)
+  aiReasoning  String?
+  latitude     Float?
+  longitude    Float?
+  geoValidated Boolean            @default(false)
+  createdAt    DateTime           @default(now())
+
+  @@index([issueId])
+  @@index([verifierId])
+}
+
+model Contractor {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  company     String?
+  rating      Float    @default(0)
+  completedJobs Int    @default(0)
+  active      Boolean  @default(true)
+  issues      Issue[]
+  tenders     Tender[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tender {
+  id           String       @id @default(cuid())
+  title        String
+  description  String?
+  budget       Float?
+  status       TenderStatus @default(DRAFT)
+  wardId       String?
+  contractorId String?
+  contractor   Contractor?  @relation(fields: [contractorId], references: [id])
+  issues       Issue[]
+  deadline     DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  link      String?
+  read      Boolean          @default(false)
+  issueId   String?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([issueId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  action    String
+  details   String?
+  issueId   String?
+  issue     Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([issueId])
+  @@index([createdAt])
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  latitude  Float
+  longitude Float
+  radiusKm  Float    @default(2)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
