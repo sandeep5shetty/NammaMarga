@@ -19,7 +19,7 @@ export function ThemeAwareDashboardImage({ className }: ThemeAwareDashboardImage
 
   return (
     <Image
-      src={isDark ? "/assets/dashboard-dark.svg" : "/assets/dashboard.svg"}
+      src={isDark ? "/assets/dashboard-drk.png" : "/assets/dashboard.svg"}
       alt="NammaMarg dashboard preview"
       width={1200}
       height={1200}

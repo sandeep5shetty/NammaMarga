@@ -44,8 +44,10 @@ const Navbar = () => {
 
     return (
         <header className={cn(
-            "sticky top-0 inset-x-0 h-14 w-full border-b border-transparent z-[99999] select-none",
-            scroll && "border-background/80 bg-background/40 backdrop-blur-md"
+            "sticky top-0 inset-x-0 h-14 w-full border-b z-[99999] select-none transition-all duration-300",
+            scroll
+                ? "border-border/50 bg-white/75 backdrop-blur-xl shadow-sm dark:border-border/60 dark:bg-background/55 dark:shadow-none"
+                : "border-white/40 bg-white/60 backdrop-blur-lg dark:border-white/10 dark:bg-background/25",
         )}>
             <AnimationContainer reverse delay={0.1} className="size-full">
                 <MaxWidthWrapper className="flex items-center justify-between">
