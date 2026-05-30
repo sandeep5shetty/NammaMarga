@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { HospitalResult } from "@/lib/hospitals/nearest";
+import type { AlongRouteFacility } from "@/lib/hospitals/along-route";
 import type {
   CivicDataSummary,
   CorridorHazard,
@@ -90,6 +91,7 @@ export type EmergencyWizardResult = {
   recommended: RouteAnalysis;
   routes: RouteAnalysis[];
   hazards: CorridorHazard[];
+  alongRouteFacilities: AlongRouteFacility[];
   civicData: CivicDataSummary;
 };
 
@@ -117,6 +119,7 @@ export function EmergencyRouteWizard({
   const [recommended, setRecommended] = useState<RouteAnalysis | null>(null);
   const [routes, setRoutes] = useState<RouteAnalysis[]>([]);
   const [hazards, setHazards] = useState<CorridorHazard[]>([]);
+  const [alongRouteFacilities, setAlongRouteFacilities] = useState<AlongRouteFacility[]>([]);
   const [civicData, setCivicData] = useState<CivicDataSummary | null>(null);
   const [focusRouteId, setFocusRouteId] = useState<string | null>(null);
   const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -131,6 +134,7 @@ export function EmergencyRouteWizard({
     setRecommended(null);
     setRoutes([]);
     setHazards([]);
+    setAlongRouteFacilities([]);
     setCivicData(null);
     setFocusRouteId(null);
     setMapFullscreen(false);
@@ -231,6 +235,7 @@ export function EmergencyRouteWizard({
       setRecommended(rec);
       setRoutes(json.data.routes ?? []);
       setHazards(json.data.corridorHazards ?? []);
+      setAlongRouteFacilities(json.data.alongRouteFacilities ?? []);
       setCivicData(json.data.civicData ?? null);
       setFocusRouteId(rec.id);
 
@@ -241,6 +246,7 @@ export function EmergencyRouteWizard({
         recommended: rec,
         routes: json.data.routes,
         hazards: json.data.corridorHazards,
+        alongRouteFacilities: json.data.alongRouteFacilities ?? [],
         civicData: json.data.civicData,
       });
     } catch (e) {
@@ -257,7 +263,7 @@ export function EmergencyRouteWizard({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName={publicMode ? "bg-black/50" : undefined}
-        className={`!flex !flex-col top-[4dvh] translate-y-0 w-[95vw] h-[min(92dvh,100%)] max-h-[92dvh] p-0 gap-0 overflow-hidden ${
+        className={`!flex !flex-col top-[4dvh] translate-y-0 w-[95vw] h-[min(92dvh,100%)] max-h-[92dvh] p-0 gap-0 overflow-hidden bg-background ${
           step === 3 && recommended ? "max-w-4xl sm:max-w-5xl" : "max-w-3xl"
         }`}
         onInteractOutside={(e) => step < 3 && e.preventDefault()}
@@ -287,7 +293,7 @@ export function EmergencyRouteWizard({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y bg-background">
           <div className="px-6 py-5 min-h-[320px]">
             <AnimatePresence mode="wait">
               {step === 1 && (
@@ -479,9 +485,10 @@ export function EmergencyRouteWizard({
                           </div>
                         )}
                         <EmergencyRouteMap
-                          className={mapFullscreen ? "flex-1 min-h-0" : "h-[260px]"}
+                          className={mapFullscreen ? "flex-1 min-h-0" : "h-[280px]"}
                           routes={routes}
                           hazards={hazards}
+                          alongRouteFacilities={alongRouteFacilities}
                           source={source}
                           destination={
                             selectedFacility
@@ -493,6 +500,7 @@ export function EmergencyRouteWizard({
                               : null
                           }
                           focusRouteId={focusRouteId ?? recommended.id}
+                          onSelectRoute={(id) => setFocusRouteId(id)}
                           showHeatmap
                           comparisonMode
                         />
@@ -501,30 +509,24 @@ export function EmergencyRouteWizard({
                             type="button"
                             size="sm"
                             variant="outline"
-                            className="absolute top-2 right-2 z-10 h-8 shadow-md bg-background/75 backdrop-blur-sm border-border/60"
+                            className="absolute top-2 right-2 z-30 h-8 shadow-md bg-background/75 backdrop-blur-sm border-border/60"
                             onClick={toggleMapFullscreen}
                           >
                             <Maximize2 className="h-3.5 w-3.5 mr-1" />
                             Fullscreen
                           </Button>
                         )}
-                        {!mapFullscreen && routes.length > 1 && (
-                          <div className="absolute bottom-2 left-2 right-2 z-10 flex flex-wrap gap-1.5 pointer-events-none">
-                            {routes.map((r) => (
-                              <span
-                                key={r.id}
-                                className="text-[10px] px-2 py-0.5 rounded-full bg-background/70 backdrop-blur-sm border border-border/60 shadow-sm flex items-center gap-1"
-                              >
-                                <span
-                                  className="w-2 h-2 rounded-full"
-                                  style={{ background: r.isRecommended ? "#22c55e" : r.isFastest ? "#3b82f6" : "#94a3b8" }}
-                                />
-                                {r.isRecommended ? "Green" : r.isFastest ? "Fastest" : "Alt"}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
+
+                      {alongRouteFacilities.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {alongRouteFacilities.filter((f) =>
+                            f.routeIds.includes(focusRouteId ?? recommended.id),
+                          ).length}{" "}
+                          healthcare stops along this route (blood banks, ICU, pharmacies). Tap
+                          markers on the map for details.
+                        </p>
+                      )}
 
                       <RouteComparisonPanel
                         routes={routes}

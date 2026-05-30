@@ -122,8 +122,8 @@ const Navbar = () => {
                         <Link
                             href="/emergency-route"
                             className={cn(
-                                buttonVariants({ size: "sm", variant: "outline" }),
-                                "border-green-500/40 text-green-700 dark:text-green-400 hover:bg-green-500/10 hidden xl:inline-flex",
+                                buttonVariants({ size: "sm" }),
+                                "hidden xl:inline-flex bg-red-600 hover:bg-red-700 text-white border border-red-700/80 shadow-sm shadow-red-900/15 dark:bg-red-600 dark:hover:bg-red-500",
                             )}
                         >
                             <Shield className="size-3.5 mr-1.5" />

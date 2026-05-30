@@ -58,9 +58,13 @@ const HomePage = async () => {
                                     <ArrowRightIcon className="w-4 h-4 ml-2" />
                                 </Link>
                             </Button>
-                            <Button asChild size="lg" variant="outline" className="w-full sm:w-auto border-green-500/50 bg-green-500/5 hover:bg-green-500/10 dark:border-green-500/40">
+                            <Button
+                                asChild
+                                size="lg"
+                                className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white border border-red-700/80 shadow-lg shadow-red-900/25 dark:bg-red-600 dark:hover:bg-red-500 dark:border-red-500"
+                            >
                                 <Link href="/emergency-route" className="flex items-center justify-center">
-                                    <Shield className="w-4 h-4 mr-2 text-green-600 dark:text-green-400" />
+                                    <Shield className="w-4 h-4 mr-2" />
                                     Emergency Route
                                 </Link>
                             </Button>
@@ -86,34 +90,7 @@ const HomePage = async () => {
                 </div>
             </MaxWidthWrapper >
 
-            {/* Companies Section */}
-            <MaxWidthWrapper>
-                <AnimationContainer delay={0.4}>
-                    <div className="py-14">
-                        <div className="mx-auto px-4 md:px-8">
-                            <h2 className="text-center text-sm font-medium font-heading text-muted-foreground uppercase">
-                                Built for Bengaluru&apos;s civic ecosystem
-                            </h2>
-                            <div className="mt-8">
-                                <ul className="flex flex-wrap items-center gap-x-6 gap-y-6 md:gap-x-16 justify-center">
-                                    {COMPANIES.map((company) => (
-                                        <li key={company.name}>
-                                            <Image
-                                                src={company.logo}
-                                                alt={company.name}
-                                                width={80}
-                                                height={80}
-                                                quality={100}
-                                                className="w-28 h-auto"
-                                            />
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </AnimationContainer>
-            </MaxWidthWrapper>
+            
 
             {/* Features Section */}
             <MaxWidthWrapper className="pt-10">
@@ -293,7 +270,10 @@ const HomePage = async () => {
                                         <ArrowRightIcon className="w-4 h-4 ml-2" />
                                     </Link>
                                 </Button>
-                                <Button asChild variant="outline">
+                                <Button
+                                    asChild
+                                    className="bg-red-600 hover:bg-red-700 text-white border border-red-700/80 shadow-md shadow-red-900/20 dark:bg-red-600 dark:hover:bg-red-500"
+                                >
                                     <Link href="/emergency-route">
                                         Emergency route
                                         <ArrowRightIcon className="w-4 h-4 ml-2" />

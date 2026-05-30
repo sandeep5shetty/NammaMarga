@@ -57,9 +57,12 @@ const MobileNavbar = () => {
                         <Link
                             href="/emergency-route"
                             onClick={handleClose}
-                            className={cn(buttonVariants({ className: "w-full mb-2" }), "border-green-500/40 bg-green-500/5")}
+                            className={cn(
+                                buttonVariants({ className: "w-full mb-2" }),
+                                "bg-red-600 hover:bg-red-700 text-white border border-red-700/80 shadow-md shadow-red-900/20",
+                            )}
                         >
-                            <Shield className="w-4 h-4 mr-2 text-green-600" />
+                            <Shield className="w-4 h-4 mr-2" />
                             Emergency Route
                         </Link>
                         <div className="flex items-center justify-evenly w-full space-x-2">

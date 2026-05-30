@@ -57,7 +57,10 @@ export async function POST(request: Request) {
     const result = await getEmergencyRoutes(
       { lat: sourceLat, lng: sourceLng, label: sourceLabel },
       { lat: destLat, lng: destLng, label: destinationLabel },
-      { vehicleType: vehicleType as EmergencyVehicleType },
+      {
+        vehicleType: vehicleType as EmergencyVehicleType,
+        excludeHospitalId: hospitalId,
+      },
     );
 
     const selectedHospital = hospitalId
@@ -96,6 +99,7 @@ export async function POST(request: Request) {
         recommended: result.recommended,
         routes: result.routes,
         corridorHazards: result.corridorHazards,
+        alongRouteFacilities: result.alongRouteFacilities,
         civicData: result.civicData,
         hazardsOnMap: result.corridorHazards,
         source: result.source,

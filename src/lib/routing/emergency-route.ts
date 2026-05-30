@@ -1,3 +1,4 @@
+import { findAlongRouteFacilities, type AlongRouteFacility } from "@/lib/hospitals/along-route";
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
 import { estimateEtaMinutes, VEHICLE_PROFILES } from "@/lib/routing/vehicle-profiles";
@@ -62,10 +63,13 @@ export type EmergencyRouteResult = {
   recommended: RouteAnalysis;
   routes: RouteAnalysis[];
   corridorHazards: CorridorHazard[];
+  alongRouteFacilities: AlongRouteFacility[];
   civicData: CivicDataSummary;
   source: { lat: number; lng: number; label?: string };
   destination: { lat: number; lng: number; label?: string };
 };
+
+export type { AlongRouteFacility };
 
 const ISSUE_TYPE_WEIGHT: Record<string, number> = {
   POTHOLE: 30,
@@ -382,7 +386,7 @@ function buildCorridorHazards(
 export async function getEmergencyRoutes(
   source: { lat: number; lng: number; label?: string },
   dest: { lat: number; lng: number; label?: string },
-  options?: { vehicleType?: EmergencyVehicleType },
+  options?: { vehicleType?: EmergencyVehicleType; excludeHospitalId?: string },
 ): Promise<EmergencyRouteResult> {
   const vehicleType = options?.vehicleType ?? "AMBULANCE";
   const mapboxRoutes = await fetchMapboxRoutes(source, dest, vehicleType);
@@ -487,10 +491,16 @@ export async function getEmergencyRoutes(
     return a.hazardIndex - b.hazardIndex;
   });
 
+  const alongRouteFacilities = await findAlongRouteFacilities({
+    routes: sorted.map((r) => ({ id: r.id, geometry: r.geometry })),
+    excludeHospitalId: options?.excludeHospitalId,
+  });
+
   return {
     recommended,
     routes: sorted,
     corridorHazards,
+    alongRouteFacilities,
     civicData,
     source,
     destination: dest,

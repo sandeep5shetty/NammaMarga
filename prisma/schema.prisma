@@ -30,6 +30,10 @@ enum HealthFacilityKind {
   HOSPITAL
   FIRST_AID
   TRAUMA_CENTER
+  BLOOD_BANK
+  PHARMACY
+  DIAGNOSTIC
+  CLINIC
 }
 
 enum EmergencyVehicleType {
@@ -270,6 +274,7 @@ model Hospital {
   kind         HealthFacilityKind @default(HOSPITAL)
   hasIcu       Boolean            @default(false)
   hasEmergency Boolean            @default(true)
+  hasBloodBank Boolean            @default(false)
   phone        String?
   address      String?
   briefInfo    String?
@@ -281,6 +286,7 @@ model Hospital {
 
   @@index([hasIcu])
   @@index([hasEmergency])
+  @@index([hasBloodBank])
   @@index([kind])
   @@index([latitude, longitude])
 }

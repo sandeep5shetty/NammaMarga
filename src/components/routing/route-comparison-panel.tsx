@@ -1,17 +1,22 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import type { RouteAnalysis } from "@/lib/routing/emergency-route";
 import { getRouteColor } from "@/lib/routing/emergency-route";
 import { cn } from "@/utils";
 import {
-  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Clock,
+  Route,
   Shield,
-  XCircle,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
 
 type RouteComparisonPanelProps = {
   routes: RouteAnalysis[];
@@ -21,6 +26,29 @@ type RouteComparisonPanelProps = {
   compact?: boolean;
 };
 
+function routeShortLabel(r: RouteAnalysis): string {
+  if (r.isRecommended) return "Green corridor";
+  if (r.isFastest) return "Fastest";
+  return `Route ${r.routeIndex + 1}`;
+}
+
+function buildRejectionSummary(alt: RouteAnalysis, rec: RouteAnalysis): string {
+  const parts: string[] = [];
+  if (alt.potholeCount > rec.potholeCount) {
+    parts.push(`${alt.potholeCount - rec.potholeCount} more pothole(s)`);
+  }
+  if (alt.issueCount > rec.issueCount) {
+    parts.push(`${alt.issueCount - rec.issueCount} more hazard(s)`);
+  }
+  if (alt.hazardIndex > rec.hazardIndex) {
+    parts.push(`higher hazard index (${alt.hazardIndex.toFixed(1)} vs ${rec.hazardIndex.toFixed(1)})`);
+  }
+  if (parts.length === 0) {
+    return "Lower combined safety score than the green corridor for ambulance routing.";
+  }
+  return `${parts.join(" · ")} than the green corridor.`;
+}
+
 export function RouteComparisonPanel({
   routes,
   recommended,
@@ -28,279 +56,225 @@ export function RouteComparisonPanel({
   onSelectRoute,
   compact,
 }: RouteComparisonPanelProps) {
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [alternatesOpen, setAlternatesOpen] = useState(false);
+
+  const activeId = selectedRouteId ?? recommended.id;
+  const active = routes.find((r) => r.id === activeId) ?? recommended;
   const alternates = routes.filter((r) => !r.isRecommended);
+  const isGreen = active.isRecommended;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Route comparison</h3>
-        <p className="text-[10px] text-muted-foreground">
-          Tap a route to preview on map
-        </p>
+    <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-border/80 bg-muted/40">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold tracking-tight">Compare routes</h3>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+            Tap to preview on map
+          </span>
+        </div>
       </div>
 
-      {/* Comparison table — demo-friendly */}
-      <div className="rounded-lg border border-border overflow-hidden text-xs">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-muted/50 border-b border-border">
-              <th className="text-left p-2 font-medium text-muted-foreground">Metric</th>
-              <th className="p-2 font-medium text-green-700 dark:text-green-400 text-center min-w-[72px]">
-                Green corridor
-              </th>
-              {alternates.map((r) => (
-                <th
-                  key={r.id}
-                  className="p-2 font-medium text-muted-foreground text-center min-w-[72px]"
-                >
-                  {r.isFastest ? "Fastest" : r.label.replace("Alternate route ", "Alt ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            <CompareRow
-              label="ETA"
-              values={routes.map((r) => `~${Math.round(r.durationMinutes)} min`)}
-              bestId={routes.reduce((a, b) => (a.durationMinutes < b.durationMinutes ? a : b)).id}
-              routeIds={routes.map((r) => r.id)}
-            />
-            <CompareRow
-              label="Potholes"
-              values={routes.map((r) => String(r.potholeCount))}
-              bestId={routes.reduce((a, b) => (a.potholeCount < b.potholeCount ? a : b)).id}
-              routeIds={routes.map((r) => r.id)}
-              lowerIsBetter
-            />
-            <CompareRow
-              label="Hazards"
-              values={routes.map((r) => String(r.issueCount))}
-              bestId={routes.reduce((a, b) => (a.issueCount < b.issueCount ? a : b)).id}
-              routeIds={routes.map((r) => r.id)}
-              lowerIsBetter
-            />
-            <CompareRow
-              label="Safety score"
-              values={routes.map((r) => `${r.safetyScore}/100`)}
-              bestId={routes.reduce((a, b) => (a.safetyScore > b.safetyScore ? a : b)).id}
-              routeIds={routes.map((r) => r.id)}
-            />
-            <CompareRow
-              label="Hazard index"
-              values={routes.map((r) => r.hazardIndex.toFixed(1))}
-              bestId={routes.reduce((a, b) => (a.hazardIndex < b.hazardIndex ? a : b)).id}
-              routeIds={routes.map((r) => r.id)}
-              lowerIsBetter
-            />
-          </tbody>
-        </table>
+      <div className="flex gap-2 p-3 overflow-x-auto scrollbar-thin border-b border-border/60 bg-background/80">
+        {routes.map((r) => {
+          const selected = r.id === activeId;
+          const color = getRouteColor(r);
+          return (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => onSelectRoute(r)}
+              className={cn(
+                "shrink-0 flex flex-col items-start gap-1 rounded-lg border px-3 py-2 min-w-[108px] text-left transition-all",
+                selected
+                  ? "border-foreground/25 bg-background shadow-sm ring-2 ring-offset-1 ring-offset-card"
+                  : "border-border/70 bg-muted/30 hover:bg-muted/50 hover:border-border",
+              )}
+              style={selected ? { ringColor: `${color}99` } : undefined}
+            >
+              <span className="flex items-center gap-1.5 w-full">
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-xs font-semibold truncate">{routeShortLabel(r)}</span>
+              </span>
+              <span className="text-[11px] text-muted-foreground pl-3.5">
+                ~{Math.round(r.durationMinutes)} min · {r.distanceKm.toFixed(1)} km
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Recommended card */}
-      <button
-        type="button"
-        onClick={() => onSelectRoute(recommended)}
+      <div
         className={cn(
-          "w-full text-left rounded-xl border-2 border-green-500 bg-green-500/10 p-4 transition-all",
-          selectedRouteId === recommended.id && "ring-2 ring-green-500/50",
+          "mx-3 mt-3 rounded-lg border p-4",
+          isGreen
+            ? "border-green-500/40 bg-gradient-to-br from-green-500/10 via-card to-card"
+            : "border-border bg-muted/20",
         )}
       >
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <Badge className="bg-green-600 text-white border-0 gap-1">
-            <Shield className="h-3 w-3" />
-            Chosen — Green corridor
-          </Badge>
-          {recommended.isFastest && (
-            <Badge variant="secondary" className="text-[10px]">Also fastest</Badge>
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {isGreen ? (
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-600 text-white shrink-0">
+                <Shield className="h-4 w-4" />
+              </span>
+            ) : (
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+                style={{ backgroundColor: `${getRouteColor(active)}22` }}
+              >
+                <Route className="h-4 w-4" style={{ color: getRouteColor(active) }} />
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="font-semibold text-sm leading-tight truncate">{active.label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isGreen ? "Recommended for ambulance" : "Alternate Mapbox route"}
+              </p>
+            </div>
+          </div>
+          {isGreen && recommended.isFastest && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-600/15 text-green-700 dark:text-green-400 px-2 py-0.5 text-[10px] font-medium border border-green-500/25">
+              <Zap className="h-3 w-3" />
+              Also fastest
+            </span>
           )}
         </div>
-        <p className="font-semibold text-sm mb-1">{recommended.label}</p>
-        <p className="text-xs text-muted-foreground mb-3">
-          {recommended.distanceKm.toFixed(1)} km · ~{Math.round(recommended.durationMinutes)} min ·
-          Lowest hazard exposure for ambulance routing
-        </p>
-        <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1.5">
-          Why we chose this route
-        </p>
-        <ul className="text-xs space-y-1 text-muted-foreground">
-          {recommended.reasons.map((r) => (
-            <li key={r} className="flex gap-2">
-              <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0 mt-0.5" />
-              {r}
-            </li>
-          ))}
-        </ul>
-        {!compact && (
-          <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-green-500/20">
-            <StatChip label="Potholes" value={recommended.potholeCount} good />
-            <StatChip label="Hazards" value={recommended.issueCount} />
-            <StatChip label="Safety" value={`${recommended.safetyScore}`} good />
-          </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          <MetricTile
+            icon={<Clock className="h-3.5 w-3.5" />}
+            label="ETA"
+            value={`~${Math.round(active.durationMinutes)}m`}
+            highlight={active.durationMinutes === Math.min(...routes.map((r) => r.durationMinutes))}
+          />
+          <MetricTile
+            label="Potholes"
+            value={String(active.potholeCount)}
+            highlight={active.potholeCount === Math.min(...routes.map((r) => r.potholeCount))}
+            highlightClass="text-green-600 dark:text-green-400"
+          />
+          <MetricTile
+            label="Hazards"
+            value={String(active.issueCount)}
+            highlight={active.issueCount === Math.min(...routes.map((r) => r.issueCount))}
+            highlightClass="text-green-600 dark:text-green-400"
+          />
+          <MetricTile
+            label="Safety"
+            value={`${active.safetyScore}`}
+            highlight={active.safetyScore === Math.max(...routes.map((r) => r.safetyScore))}
+            highlightClass="text-green-600 dark:text-green-400"
+          />
+        </div>
+
+        {!isGreen && (
+          <p className="mt-3 text-xs text-muted-foreground leading-relaxed rounded-md bg-background/60 border border-border/60 px-3 py-2">
+            <span className="font-medium text-foreground">vs green corridor: </span>
+            {buildRejectionSummary(active, recommended)}
+          </p>
         )}
-      </button>
 
-      {/* Alternates */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-          <XCircle className="h-3.5 w-3.5 text-red-500/80" />
-          Not chosen — {alternates.length} other route{alternates.length !== 1 ? "s" : ""}
-        </p>
-        {alternates.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            onClick={() => onSelectRoute(r)}
-            className={cn(
-              "w-full text-left rounded-xl border border-border bg-muted/20 p-4 transition-all hover:bg-muted/40",
-              selectedRouteId === r.id && "ring-2 ring-muted-foreground/30 border-muted-foreground/40",
-            )}
-          >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className="w-3 h-3 rounded-full shrink-0 mt-0.5"
-                  style={{ background: getRouteColor(r) }}
-                />
-                <span className="font-medium text-sm">{r.label}</span>
-                {r.isFastest && (
-                  <Badge variant="secondary" className="text-[10px] gap-0.5">
-                    <Zap className="h-3 w-3" />
-                    Fastest
-                  </Badge>
-                )}
-              </div>
-              <Badge variant="outline" className="text-[10px] shrink-0 border-red-500/30 text-red-600 dark:text-red-400">
-                Not recommended
-              </Badge>
-            </div>
-
-            <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground mb-3">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                ~{Math.round(r.durationMinutes)} min
-              </span>
-              <span>{r.potholeCount} potholes</span>
-              <span>{r.issueCount} hazards</span>
-              <span>Safety {r.safetyScore}/100</span>
-            </div>
-
-            {r.comparisonNote && (
-              <p className="text-xs font-medium text-red-600/90 dark:text-red-400 mb-2 p-2 rounded-md bg-red-500/5 border border-red-500/20">
-                {r.comparisonNote}
-              </p>
-            )}
-
-            <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1.5">
-              Why we did not choose this route
-            </p>
-            <ul className="text-xs space-y-1.5">
-              {buildRejectionReasons(r, recommended).map((reason) => (
-                <li key={reason} className="flex gap-2 text-muted-foreground">
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
-                  {reason}
-                </li>
+        {isGreen && !compact && active.reasons.length > 0 && (
+          <Collapsible open={reasonsOpen} onOpenChange={setReasonsOpen} className="mt-3">
+            <CollapsibleTrigger className="flex w-full items-center justify-between text-xs font-medium text-green-700 dark:text-green-400 hover:underline">
+              Why this route was chosen
+              <ChevronDown
+                className={cn("h-4 w-4 transition-transform", reasonsOpen && "rotate-180")}
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-1.5">
+              {active.reasons.slice(0, 4).map((r) => (
+                <p key={r} className="text-xs text-muted-foreground flex gap-2 leading-relaxed">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0 mt-0.5" />
+                  {r}
+                </p>
               ))}
-              {r.warnings.map((w) => (
-                <li key={w} className="flex gap-2 text-muted-foreground">
-                  <XCircle className="h-3.5 w-3.5 text-red-500/70 shrink-0 mt-0.5" />
-                  {w}
-                </li>
-              ))}
-            </ul>
-          </button>
-        ))}
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
+
+      {alternates.length > 0 && (
+        <Collapsible
+          open={alternatesOpen}
+          onOpenChange={setAlternatesOpen}
+          className="mx-3 mb-3 mt-1"
+        >
+          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5 text-xs font-medium hover:bg-muted/40 transition-colors">
+            <span>Other routes ({alternates.length})</span>
+            <ChevronDown
+              className={cn("h-4 w-4 text-muted-foreground transition-transform", alternatesOpen && "rotate-180")}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2 space-y-1.5">
+            {alternates.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => onSelectRoute(r)}
+                className={cn(
+                  "w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  r.id === activeId
+                    ? "border-border bg-background shadow-sm"
+                    : "border-transparent bg-muted/20 hover:bg-muted/40",
+                )}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: getRouteColor(r) }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{routeShortLabel(r)}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    ~{Math.round(r.durationMinutes)} min · {r.potholeCount} potholes · Safety{" "}
+                    {r.safetyScore}
+                  </p>
+                </div>
+                {r.isFastest && (
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium shrink-0">
+                    Fastest
+                  </span>
+                )}
+              </button>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   );
 }
 
-function buildRejectionReasons(alt: RouteAnalysis, rec: RouteAnalysis): string[] {
-  const reasons: string[] = [];
-
-  if (alt.potholeCount > rec.potholeCount) {
-    reasons.push(
-      `${alt.potholeCount - rec.potholeCount} more pothole(s) on this path than the green corridor (${rec.potholeCount})`,
-    );
-  }
-  if (alt.issueCount > rec.issueCount) {
-    reasons.push(
-      `${alt.issueCount - rec.issueCount} additional civic hazard(s) compared to the chosen route`,
-    );
-  }
-  if (alt.hazardIndex > rec.hazardIndex) {
-    reasons.push(
-      `Higher hazard index (${alt.hazardIndex.toFixed(1)} vs ${rec.hazardIndex.toFixed(1)} on green corridor)`,
-    );
-  }
-  if (alt.safetyScore < rec.safetyScore) {
-    reasons.push(
-      `Lower safety score (${alt.safetyScore}/100 vs ${rec.safetyScore}/100)`,
-    );
-  }
-  if (alt.isFastest && alt.potholeCount >= rec.potholeCount) {
-    reasons.push(
-      `Faster by ~${Math.max(0, Math.round(alt.durationMinutes - rec.durationMinutes))} min but exposes patient to more road damage`,
-    );
-  }
-  if (reasons.length === 0) {
-    reasons.push("Another Mapbox alternate exists, but green corridor has the best combined safety score");
-  }
-
-  return reasons;
-}
-
-function CompareRow({
-  label,
-  values,
-  bestId,
-  routeIds,
-  lowerIsBetter,
-}: {
-  label: string;
-  values: string[];
-  bestId: string;
-  routeIds: string[];
-  lowerIsBetter?: boolean;
-}) {
-  return (
-    <tr>
-      <td className="p-2 text-muted-foreground font-medium">{label}</td>
-      {values.map((val, i) => {
-        const isBest = routeIds[i] === bestId;
-        const isRecommended = i === 0;
-        return (
-          <td
-            key={routeIds[i]}
-            className={cn(
-              "p-2 text-center font-medium",
-              isRecommended && "bg-green-500/5",
-              isBest && "text-green-700 dark:text-green-400",
-            )}
-          >
-            {val}
-            {isBest && !isRecommended && lowerIsBetter !== undefined && (
-              <span className="block text-[9px] text-muted-foreground font-normal">best</span>
-            )}
-          </td>
-        );
-      })}
-    </tr>
-  );
-}
-
-function StatChip({
+function MetricTile({
+  icon,
   label,
   value,
-  good,
+  highlight,
+  highlightClass,
 }: {
+  icon?: React.ReactNode;
   label: string;
-  value: number | string;
-  good?: boolean;
+  value: string;
+  highlight?: boolean;
+  highlightClass?: string;
 }) {
   return (
-    <div className="rounded-md bg-background/80 py-1.5 text-center">
-      <p className={cn("text-base font-bold", good && "text-green-600")}>{value}</p>
-      <p className="text-[10px] text-muted-foreground">{label}</p>
+    <div className="rounded-lg bg-background/80 border border-border/50 px-2 py-2 text-center">
+      {icon && (
+        <div className="flex justify-center text-muted-foreground mb-0.5">{icon}</div>
+      )}
+      <p
+        className={cn(
+          "text-sm font-bold tabular-nums leading-none",
+          highlight && (highlightClass ?? "text-foreground"),
+        )}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-1">{label}</p>
     </div>
   );
 }

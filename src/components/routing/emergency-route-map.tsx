@@ -1,7 +1,12 @@
 "use client";
 
+import type { AlongRouteFacility } from "@/lib/hospitals/along-route";
 import type { CorridorHazard, RouteAnalysis } from "@/lib/routing/emergency-route";
 import { getRouteColor } from "@/lib/routing/emergency-route";
+import {
+  FACILITY_KIND_LABELS,
+  FACILITY_KIND_MAP_COLOR,
+} from "@/types/emergency";
 import { ISSUE_TYPE_LABELS, SEVERITY_COLORS } from "@/types/civic";
 import type { IssueType, Severity } from "@prisma/client";
 import { cn } from "@/utils";
@@ -15,9 +20,11 @@ type PlacePoint = { latitude: number; longitude: number; placeName: string };
 type EmergencyRouteMapProps = {
   routes: RouteAnalysis[];
   hazards: CorridorHazard[];
+  alongRouteFacilities?: AlongRouteFacility[];
   source: PlacePoint | null;
   destination: PlacePoint | null;
   focusRouteId: string | null;
+  onSelectRoute?: (routeId: string) => void;
   showPotholesOnly?: boolean;
   showHeatmap?: boolean;
   comparisonMode?: boolean;
@@ -53,12 +60,57 @@ function buildHazardPopup(h: CorridorHazard, isLight: boolean) {
   `;
 }
 
+function buildFacilityPopup(f: AlongRouteFacility, isLight: boolean) {
+  const muted = isLight ? "#64748b" : "#a1a1aa";
+  const tags: string[] = [];
+  if (f.hasIcu) tags.push("ICU");
+  if (f.hasBloodBank) tags.push("Blood bank");
+  if (f.hasEmergency) tags.push("24/7 ER");
+
+  return `
+    <div style="font-family:system-ui;min-width:200px;padding:2px 0">
+      <p style="font-weight:600;margin:0 0 4px;font-size:13px">${f.name}</p>
+      <p style="margin:0 0 6px;font-size:11px;color:${FACILITY_KIND_MAP_COLOR[f.kind]};font-weight:600">${FACILITY_KIND_LABELS[f.kind]}</p>
+      ${tags.length ? `<p style="margin:0 0 6px;font-size:10px;color:${muted}">${tags.join(" · ")}</p>` : ""}
+      <p style="margin:0;font-size:11px;color:${muted}">${f.distanceFromRouteM}m from route</p>
+      ${f.briefInfo ? `<p style="margin:8px 0 0;font-size:11px">${f.briefInfo}</p>` : ""}
+      ${f.phone ? `<p style="margin:6px 0 0;font-size:11px">📞 ${f.phone}</p>` : ""}
+    </div>
+  `;
+}
+
+function routePaintProps(
+  r: RouteAnalysis,
+  focusRoute: RouteAnalysis | undefined,
+  comparisonMode: boolean,
+) {
+  const isFocused = r.id === focusRoute?.id;
+  const color = getRouteColor(r);
+  return {
+    id: r.id,
+    color,
+    width: isFocused ? 9 : r.isRecommended ? 7 : 5,
+    opacity: comparisonMode
+      ? isFocused
+        ? 1
+        : r.isRecommended
+          ? 0.75
+          : 0.45
+      : isFocused
+        ? 1
+        : 0.35,
+    zIndex: isFocused ? 3 : r.isRecommended ? 2 : 1,
+  };
+}
+
 export function EmergencyRouteMap({
   routes,
   hazards,
+  alongRouteFacilities = [],
   source,
   destination,
   focusRouteId,
+  onSelectRoute,
   showPotholesOnly = false,
   showHeatmap = true,
   comparisonMode = false,
@@ -70,8 +122,14 @@ export function EmergencyRouteMap({
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const lastStyleRef = useRef<string | null>(null);
   const layersReadyRef = useRef(false);
-  const eventsBoundRef = useRef(false);
+  const hazardEventsBoundRef = useRef(false);
+  const facilityEventsBoundRef = useRef(false);
+  const routeEventsBoundRef = useRef(false);
+  const didFitBoundsRef = useRef(false);
+  const onSelectRouteRef = useRef(onSelectRoute);
   const { resolvedTheme } = useTheme();
+
+  onSelectRouteRef.current = onSelectRoute;
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const isLight = resolvedTheme === "light";
@@ -81,8 +139,32 @@ export function EmergencyRouteMap({
   const strokeColor = isLight ? "#ffffff" : "#18181b";
 
   const recommendedId = routes.find((r) => r.isRecommended)?.id ?? "";
+  const focusRoute =
+    routes.find((r) => r.id === focusRouteId) ?? routes.find((r) => r.isRecommended);
 
   const filteredHazards = showPotholesOnly ? hazards.filter((h) => h.isPothole) : hazards;
+
+  const visibleFacilities = alongRouteFacilities.filter((f) =>
+    focusRouteId ? f.routeIds.includes(focusRouteId) : true,
+  );
+
+  const bindRouteInteractions = useCallback((map: mapboxgl.Map) => {
+    if (routeEventsBoundRef.current) return;
+    routeEventsBoundRef.current = true;
+
+    const handleRouteClick = (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.MapboxGeoJSONFeature[] }) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) onSelectRouteRef.current?.(id);
+    };
+
+    map.on("click", "route-line-hit", handleRouteClick);
+    map.on("mouseenter", "route-line-hit", () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "route-line-hit", () => {
+      map.getCanvas().style.cursor = "";
+    });
+  }, []);
 
   const syncLayers = useCallback(
     (map: mapboxgl.Map) => {
@@ -95,6 +177,9 @@ export function EmergencyRouteMap({
 
       [
         "route-line",
+        "route-line-hit",
+        "facility-points",
+        "facility-labels",
         "hazard-heatmap",
         "hazard-clusters",
         "hazard-cluster-count",
@@ -102,42 +187,37 @@ export function EmergencyRouteMap({
         "hazard-pothole-ring",
         "hazard-critical-pulse",
       ].forEach(removeLayer);
-      ["routes", "hazards"].forEach(removeSource);
+      ["routes", "facilities", "hazards"].forEach(removeSource);
 
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
 
-      const focusRoute = focusRouteId
-        ? routes.find((r) => r.id === focusRouteId)
-        : routes.find((r) => r.isRecommended);
-
       if (routes.length > 0) {
+        const routeFeatures = [...routes]
+          .sort((a, b) => {
+            const pa = routePaintProps(a, focusRoute, comparisonMode).zIndex;
+            const pb = routePaintProps(b, focusRoute, comparisonMode).zIndex;
+            return pa - pb;
+          })
+          .map((r) => {
+            const p = routePaintProps(r, focusRoute, comparisonMode);
+            return {
+              type: "Feature" as const,
+              properties: {
+                id: p.id,
+                color: p.color,
+                width: p.width,
+                opacity: p.opacity,
+              },
+              geometry: { type: "LineString" as const, coordinates: r.geometry },
+            };
+          });
+
         map.addSource("routes", {
           type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: routes.map((r) => ({
-              type: "Feature",
-              properties: {
-                id: r.id,
-                color: getRouteColor(r),
-                width: r.isRecommended ? 8 : r.id === focusRoute?.id ? 7 : 5,
-                opacity: comparisonMode
-                  ? r.id === focusRoute?.id
-                    ? 0.95
-                    : r.isRecommended
-                      ? 0.88
-                      : 0.65
-                  : focusRoute && r.id !== focusRoute.id
-                    ? 0.28
-                    : r.isRecommended
-                      ? 0.95
-                      : 0.55,
-              },
-              geometry: { type: "LineString", coordinates: r.geometry },
-            })),
-          },
+          data: { type: "FeatureCollection", features: routeFeatures },
         });
+
         map.addLayer({
           id: "route-line",
           type: "line",
@@ -149,6 +229,105 @@ export function EmergencyRouteMap({
           },
           layout: { "line-cap": "round", "line-join": "round" },
         });
+
+        map.addLayer({
+          id: "route-line-hit",
+          type: "line",
+          source: "routes",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 18,
+            "line-opacity": 0.01,
+          },
+          layout: { "line-cap": "round", "line-join": "round" },
+        });
+
+        bindRouteInteractions(map);
+      }
+
+      if (visibleFacilities.length > 0) {
+        map.addSource("facilities", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: visibleFacilities.map((f) => ({
+              type: "Feature",
+              properties: {
+                id: f.id,
+                kind: f.kind,
+                name: f.name,
+                color: FACILITY_KIND_MAP_COLOR[f.kind],
+                hasIcu: f.hasIcu ? 1 : 0,
+              },
+              geometry: {
+                type: "Point",
+                coordinates: [f.longitude, f.latitude],
+              },
+            })),
+          },
+        });
+
+        map.addLayer({
+          id: "facility-points",
+          type: "circle",
+          source: "facilities",
+          paint: {
+            "circle-color": ["get", "color"],
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              ["case", ["==", ["get", "hasIcu"], 1], 9, 7],
+              14,
+              ["case", ["==", ["get", "hasIcu"], 1], 12, 9],
+            ],
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": strokeColor,
+            "circle-opacity": 0.92,
+          },
+        });
+
+        map.addLayer({
+          id: "facility-labels",
+          type: "symbol",
+          source: "facilities",
+          minzoom: 12,
+          layout: {
+            "text-field": ["get", "name"],
+            "text-size": 10,
+            "text-offset": [0, 1.4],
+            "text-anchor": "top",
+            "text-max-width": 12,
+          },
+          paint: {
+            "text-color": isLight ? "#334155" : "#e2e8f0",
+            "text-halo-color": isLight ? "#ffffff" : "#0f172a",
+            "text-halo-width": 1.5,
+          },
+        });
+
+        if (!facilityEventsBoundRef.current) {
+          facilityEventsBoundRef.current = true;
+          map.on("click", "facility-points", (e) => {
+            const f = e.features?.[0];
+            const id = f?.properties?.id as string | undefined;
+            if (!id) return;
+            const facility = alongRouteFacilities.find((x) => x.id === id);
+            if (!facility) return;
+            popupRef.current?.remove();
+            popupRef.current = new mapboxgl.Popup({ offset: 14, maxWidth: "280px" })
+              .setLngLat(e.lngLat)
+              .setHTML(buildFacilityPopup(facility, isLight))
+              .addTo(map);
+          });
+          map.on("mouseenter", "facility-points", () => {
+            map.getCanvas().style.cursor = "pointer";
+          });
+          map.on("mouseleave", "facility-points", () => {
+            map.getCanvas().style.cursor = "";
+          });
+        }
       }
 
       if (filteredHazards.length > 0) {
@@ -309,12 +488,12 @@ export function EmergencyRouteMap({
           },
         });
 
-        if (!eventsBoundRef.current) {
-          eventsBoundRef.current = true;
+        if (!hazardEventsBoundRef.current) {
+          hazardEventsBoundRef.current = true;
           map.on("click", "hazard-points", (e) => {
-            const f = e.features?.[0];
-            if (!f?.properties?.id) return;
-            const hazard = filteredHazards.find((h) => h.id === f.properties!.id);
+            const feat = e.features?.[0];
+            if (!feat?.properties?.id) return;
+            const hazard = filteredHazards.find((h) => h.id === feat.properties!.id);
             if (!hazard) return;
             popupRef.current?.remove();
             popupRef.current = new mapboxgl.Popup({ offset: 12, maxWidth: "260px" })
@@ -348,13 +527,15 @@ export function EmergencyRouteMap({
         markersRef.current.push(m);
       }
 
-      if (routes.length > 0 || source) {
+      if (!didFitBoundsRef.current && (routes.length > 0 || source)) {
         const bounds = new mapboxgl.LngLatBounds();
         routes.forEach((r) => r.geometry.forEach(([lng, lat]) => bounds.extend([lng, lat])));
         filteredHazards.forEach((h) => bounds.extend([h.longitude, h.latitude]));
+        visibleFacilities.forEach((f) => bounds.extend([f.longitude, f.latitude]));
         if (source) bounds.extend([source.longitude, source.latitude]);
         if (destination) bounds.extend([destination.longitude, destination.latitude]);
         map.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 800 });
+        didFitBoundsRef.current = true;
       }
 
       layersReadyRef.current = true;
@@ -362,16 +543,23 @@ export function EmergencyRouteMap({
     [
       routes,
       filteredHazards,
+      visibleFacilities,
+      alongRouteFacilities,
       source,
       destination,
-      focusRouteId,
+      focusRoute,
       recommendedId,
       showHeatmap,
       comparisonMode,
       strokeColor,
       isLight,
+      bindRouteInteractions,
     ],
   );
+
+  useEffect(() => {
+    didFitBoundsRef.current = false;
+  }, [routes.length, source?.latitude, destination?.latitude]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -411,13 +599,17 @@ export function EmergencyRouteMap({
         mapRef.current?.remove();
         mapRef.current = null;
         layersReadyRef.current = false;
-        eventsBoundRef.current = false;
+        hazardEventsBoundRef.current = false;
+        facilityEventsBoundRef.current = false;
+        routeEventsBoundRef.current = false;
+        didFitBoundsRef.current = false;
       };
     }
 
     if (lastStyleRef.current !== mapStyle) {
       lastStyleRef.current = mapStyle;
       layersReadyRef.current = false;
+      routeEventsBoundRef.current = false;
       mapRef.current.setStyle(mapStyle);
       mapRef.current.once("load", () => {
         if (mapRef.current) syncLayers(mapRef.current);
@@ -431,13 +623,50 @@ export function EmergencyRouteMap({
     }
   }, [token, mapStyle, syncLayers]);
 
+  const focusRouteMeta = routes.find((r) => r.id === focusRouteId);
+
   return (
     <div className={cn("relative rounded-xl border border-border overflow-hidden", className)}>
       <div ref={mapContainer} className="absolute inset-0 w-full h-full" />
+
+      {routes.length > 1 && onSelectRoute && (
+        <div className="absolute bottom-3 left-3 right-3 z-20 flex gap-2 overflow-x-auto pb-1 pointer-events-auto">
+          {routes.map((r) => {
+            const selected = r.id === (focusRouteId ?? focusRoute?.id);
+            const color = getRouteColor(r);
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => onSelectRoute(r.id)}
+                className={cn(
+                  "shrink-0 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-md backdrop-blur-md transition-all",
+                  selected
+                    ? "bg-background border-foreground/30 ring-2 ring-offset-1 ring-offset-transparent"
+                    : "bg-background/80 border-border/60 hover:bg-background",
+                )}
+                style={selected ? { boxShadow: `0 0 0 2px ${color}55` } : undefined}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="whitespace-nowrap">
+                  {r.isRecommended ? "Green corridor" : r.isFastest ? "Fastest" : `Route ${r.routeIndex + 1}`}
+                </span>
+                <span className="text-muted-foreground whitespace-nowrap">
+                  ~{Math.round(r.durationMinutes)}m
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {routes.length > 0 && (
-        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 max-w-[200px]">
-          <div className="rounded-lg border border-border/60 bg-background/75 backdrop-blur-md px-3 py-2 text-[10px] shadow-sm space-y-1">
-            <p className="font-semibold text-xs mb-1.5">Map legend</p>
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 max-w-[210px] pointer-events-none">
+          <div className="rounded-lg border border-border/60 bg-background/75 backdrop-blur-md px-3 py-2 text-[10px] shadow-sm space-y-1 pointer-events-auto">
+            <p className="font-semibold text-xs mb-1">Tap a route to switch</p>
             <div className="flex items-center gap-2">
               <span className="w-3 h-1 rounded-full bg-green-500" />
               Green corridor
@@ -446,19 +675,29 @@ export function EmergencyRouteMap({
               <span className="w-3 h-1 rounded-full bg-blue-500" />
               Fastest / alternate
             </div>
+            <p className="font-semibold text-xs mt-2 mb-1">On the way</p>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+              Blood bank
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500" />
+              ICU / clinic
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+              Pharmacy
+            </div>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-orange-400" />
-              Pothole on route
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-              Hazard on alternate only
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-              Nearby in corridor
+              Pothole
             </div>
           </div>
+          {focusRouteMeta && (
+            <p className="text-[10px] text-muted-foreground bg-background/70 backdrop-blur px-2 py-1 rounded-md border border-border/50">
+              Viewing: {focusRouteMeta.label}
+            </p>
+          )}
         </div>
       )}
     </div>

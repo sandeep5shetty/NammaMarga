@@ -1,4 +1,6 @@
 import {
+  HealthFacilityKind,
+  HospitalType,
   IssueStatus,
   IssueType,
   PrismaClient,
@@ -44,7 +46,21 @@ const ROADS = [
   { name: "Bannerghatta Road", wardNumber: 14, lat1: 12.935, lng1: 77.575, lat2: 12.925, lng2: 77.59 },
 ];
 
-const HEALTH_FACILITIES = [
+type HealthFacilitySeed = {
+  name: string;
+  type: HospitalType;
+  kind: HealthFacilityKind;
+  hasIcu: boolean;
+  hasEmergency: boolean;
+  hasBloodBank?: boolean;
+  lat: number;
+  lng: number;
+  phone: string;
+  address: string;
+  briefInfo: string;
+};
+
+const HEALTH_FACILITIES: HealthFacilitySeed[] = [
   {
     name: "Manipal Hospital Old Airport Road",
     type: "MULTISPECIALTY" as const,
@@ -207,11 +223,142 @@ const HEALTH_FACILITIES = [
     kind: "HOSPITAL" as const,
     hasIcu: true,
     hasEmergency: true,
+    hasBloodBank: true,
     lat: 12.99,
     lng: 77.587,
     phone: "080-4199-0000",
     address: "Cunningham Road, Bengaluru",
     briefInfo: "Central emergency with ICU — good access from Shivajinagar & CBD.",
+  },
+  {
+    name: "Indian Red Cross Blood Bank — Richmond Town",
+    type: "GENERAL" as const,
+    kind: "BLOOD_BANK" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: true,
+    lat: 12.962,
+    lng: 77.601,
+    phone: "080-2222-4444",
+    address: "Richmond Road, Bengaluru",
+    briefInfo: "Whole blood, platelets & plasma — 24/7 collection on major corridors.",
+  },
+  {
+    name: "Rashtrotthana Blood Centre — Jayanagar",
+    type: "GENERAL" as const,
+    kind: "BLOOD_BANK" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: true,
+    lat: 12.925,
+    lng: 77.583,
+    phone: "080-2664-6666",
+    address: "Jayanagar 4th Block, Bengaluru",
+    briefInfo: "Voluntary blood donation & emergency release for hospitals.",
+  },
+  {
+    name: "Lions Blood Bank — Victoria Hospital Campus",
+    type: "GENERAL" as const,
+    kind: "BLOOD_BANK" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: true,
+    lat: 12.957,
+    lng: 77.576,
+    phone: "080-2670-0815",
+    address: "KR Market, Bengaluru",
+    briefInfo: "Attached to Victoria Hospital — rapid issue for trauma cases.",
+  },
+  {
+    name: "Rotary Blood Bank — Indiranagar",
+    type: "GENERAL" as const,
+    kind: "BLOOD_BANK" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: true,
+    lat: 12.971,
+    lng: 77.638,
+    phone: "080-2520-1010",
+    address: "100 Feet Road, Indiranagar",
+    briefInfo: "Component separation lab — along ORR & CBD access routes.",
+  },
+  {
+    name: "Apollo Pharmacy 24x7 — Hosur Road",
+    type: "GENERAL" as const,
+    kind: "PHARMACY" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 12.918,
+    lng: 77.608,
+    phone: "080-4110-2222",
+    address: "Hosur Road, Bengaluru",
+    briefInfo: "Emergency medicines, oxygen cylinders & IV fluids on route.",
+  },
+  {
+    name: "MedPlus Pharmacy — Koramangala",
+    type: "GENERAL" as const,
+    kind: "PHARMACY" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 12.935,
+    lng: 77.624,
+    phone: "080-2553-3333",
+    address: "80 Feet Road, Koramangala",
+    briefInfo: "24/7 pharmacy — trauma meds & first-aid supplies.",
+  },
+  {
+    name: "Dr Lal PathLabs — Indiranagar",
+    type: "GENERAL" as const,
+    kind: "DIAGNOSTIC" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 12.98,
+    lng: 77.644,
+    phone: "080-4918-8888",
+    address: "CMH Road, Indiranagar",
+    briefInfo: "STAT labs — blood gas, cross-match support for ICU transfers.",
+  },
+  {
+    name: "Thyrocare Collection Centre — BTM",
+    type: "GENERAL" as const,
+    kind: "DIAGNOSTIC" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: false,
+    lat: 12.916,
+    lng: 77.61,
+    phone: "080-3090-0000",
+    address: "BTM Layout, Bengaluru",
+    briefInfo: "Rapid diagnostics on south corridor routes.",
+  },
+  {
+    name: "City Clinic & ICU Step-down — Domlur",
+    type: "GENERAL" as const,
+    kind: "CLINIC" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 12.958,
+    lng: 77.638,
+    phone: "080-2535-7777",
+    address: "Domlur, Bengaluru",
+    briefInfo: "Intermediate ICU beds — stabilization before tertiary hospital.",
+  },
+  {
+    name: "Express Care Clinic — MG Road",
+    type: "GENERAL" as const,
+    kind: "CLINIC" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 12.973,
+    lng: 77.61,
+    phone: "080-2558-9999",
+    address: "MG Road, Bengaluru",
+    briefInfo: "Walk-in emergency care & vitals on central routes.",
   },
 ];
 
@@ -321,6 +468,7 @@ async function main() {
       kind: h.kind,
       hasIcu: h.hasIcu,
       hasEmergency: h.hasEmergency,
+      hasBloodBank: h.hasBloodBank ?? h.kind === "BLOOD_BANK",
       phone: h.phone,
       address: h.address,
       briefInfo: h.briefInfo,

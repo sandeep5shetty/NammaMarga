@@ -5,6 +5,7 @@ import {
   type EmergencyWizardResult,
 } from "@/components/routing/emergency-route-wizard";
 import { EmergencyRouteMap } from "@/components/routing/emergency-route-map";
+import { RouteComparisonPanel } from "@/components/routing/route-comparison-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,11 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
   const [result, setResult] = useState<EmergencyWizardResult | null>(null);
   const [showPotholesOnly, setShowPotholesOnly] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [focusRouteId, setFocusRouteId] = useState<string | null>(null);
+
+  const activeRouteId = focusRouteId ?? result?.recommended.id ?? null;
+  const activeRoute =
+    result?.routes.find((r) => r.id === activeRouteId) ?? result?.recommended ?? null;
 
   useEffect(() => {
     if (variant === "app") setWizardOpen(true);
@@ -49,7 +55,11 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
             live potholes from NammaMarga civic data.
           </p>
           {!wizardOpen && !result && (
-            <Button size="lg" className="mt-6" onClick={() => setWizardOpen(true)}>
+            <Button
+              size="lg"
+              className="mt-6 bg-red-600 hover:bg-red-700 text-white border border-red-700/80 shadow-lg shadow-red-900/25 dark:bg-red-600 dark:hover:bg-red-500"
+              onClick={() => setWizardOpen(true)}
+            >
               <Shield className="h-4 w-4 mr-2" />
               Start route planner
             </Button>
@@ -80,6 +90,7 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
         onOpenChange={setWizardOpen}
         onComplete={(r) => {
           setResult(r);
+          setFocusRouteId(r.recommended.id);
           if (isPublic) setWizardOpen(false);
         }}
         publicMode={isPublic}
@@ -109,9 +120,9 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
                 {result.source.name} → {result.facility.name}
               </CardTitle>
               <CardDescription>
-                {result.recommended.distanceKm.toFixed(1)} km · ~
-                {Math.round(result.recommended.durationMinutes)} min · Safety{" "}
-                {result.recommended.safetyScore}/100
+                {activeRoute
+                  ? `${activeRoute.distanceKm.toFixed(1)} km · ~${Math.round(activeRoute.durationMinutes)} min · Safety ${activeRoute.safetyScore}/100`
+                  : null}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-4">
@@ -142,17 +153,36 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
             className="h-[min(480px,60vh)]"
             routes={result.routes}
             hazards={result.hazards}
+            alongRouteFacilities={result.alongRouteFacilities}
             source={{ ...result.source, placeName: result.source.placeName }}
             destination={{
               latitude: result.facility.latitude,
               longitude: result.facility.longitude,
               placeName: result.facility.name,
             }}
-            focusRouteId={result.recommended.id}
+            focusRouteId={activeRouteId}
+            onSelectRoute={setFocusRouteId}
             showPotholesOnly={showPotholesOnly}
             showHeatmap={showHeatmap}
             comparisonMode
           />
+
+          {result.alongRouteFacilities.length > 0 && activeRouteId && (
+            <p className="text-sm text-muted-foreground">
+              {result.alongRouteFacilities.filter((f) => f.routeIds.includes(activeRouteId)).length}{" "}
+              healthcare facilities on this route — blood banks, pharmacies, ICU step-down, and
+              more.
+            </p>
+          )}
+
+          {result.routes.length > 1 && activeRoute && (
+            <RouteComparisonPanel
+              routes={result.routes}
+              recommended={result.recommended}
+              selectedRouteId={activeRouteId}
+              onSelectRoute={(r) => setFocusRouteId(r.id)}
+            />
+          )}
         </div>
       )}
     </div>
