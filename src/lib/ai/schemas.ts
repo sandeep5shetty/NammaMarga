@@ -1,14 +1,33 @@
+import { REPORTABLE_ISSUE_TYPES } from "@/lib/issues/reportable-types";
 import { IssueType, Severity } from "@prisma/client";
 import { z } from "zod";
 
+const reportableTypeEnum = z.enum(
+  REPORTABLE_ISSUE_TYPES as unknown as [IssueType, ...IssueType[]],
+);
+
+/** Raw model output for a supported civic issue. */
 export const classificationSchema = z.object({
-  type: z.nativeEnum(IssueType),
+  isCivicIssue: z.literal(true),
+  type: reportableTypeEnum,
   severity: z.nativeEnum(Severity),
   confidence: z.number().min(0).max(1),
   title: z.string().min(3).max(120),
   summary: z.string().min(10).max(500),
   reasoning: z.string().min(10).max(500),
 });
+
+/** Raw model output when the photo is not a reportable civic issue. */
+export const classificationRejectionSchema = z.object({
+  isCivicIssue: z.literal(false),
+  reason: z.string().min(10).max(500),
+  summary: z.string().max(500).optional(),
+});
+
+export const classificationResponseSchema = z.discriminatedUnion("isCivicIssue", [
+  classificationSchema,
+  classificationRejectionSchema,
+]);
 
 export const verificationSchema = z.object({
   verified: z.boolean(),

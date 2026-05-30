@@ -23,6 +23,18 @@ export interface IssueClassification {
   reasoning: string;
 }
 
+export type IssueClassificationAccepted = IssueClassification & { accepted: true };
+
+export type IssueClassificationRejected = {
+  accepted: false;
+  reason: string;
+  summary?: string;
+};
+
+export type IssueClassificationResult =
+  | IssueClassificationAccepted
+  | IssueClassificationRejected;
+
 export interface FixVerification {
   verified: boolean;
   confidence: number;

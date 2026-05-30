@@ -4,6 +4,10 @@ import {
   mergeIntoExistingIssue,
 } from "@/lib/issues/duplicate-detection";
 import { enrichAndCreateIssue } from "@/lib/issues/issue-lifecycle";
+import {
+  isReportableIssueType,
+  validateReportableIssueType,
+} from "@/lib/issues/reportable-types";
 import { notifyIssueUpdate } from "@/lib/notifications";
 import { db } from "@/lib/prisma";
 import { withRateLimit } from "@/lib/api/middleware-helpers";
@@ -14,7 +18,9 @@ import { z } from "zod";
 const createIssueSchema = z.object({
   title: z.string().min(3),
   description: z.string().optional(),
-  type: z.nativeEnum(IssueType),
+  type: z.nativeEnum(IssueType).refine(isReportableIssueType, {
+    message: "Issue type is not a supported civic category",
+  }),
   severity: z.nativeEnum(Severity),
   confidence: z.number().min(0).max(1),
   aiSummary: z.string().optional(),
@@ -76,6 +82,14 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Invalid request", details: parsed.error.flatten() },
         { status: 400 },
+      );
+    }
+
+    const typeCheck = validateReportableIssueType(parsed.data.type);
+    if (!typeCheck.ok) {
+      return NextResponse.json(
+        { error: typeCheck.message, code: "UNSUPPORTED_ISSUE_TYPE" },
+        { status: 422 },
       );
     }
 

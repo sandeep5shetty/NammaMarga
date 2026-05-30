@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/collapsible";
 import type { RouteAnalysis } from "@/lib/routing/emergency-route";
 import { getRouteColor } from "@/lib/routing/emergency-route";
+import type { RouteStop } from "@/lib/routing/route-stops";
 import { cn } from "@/utils";
 import {
   CheckCircle2,
@@ -28,6 +29,7 @@ type RouteComparisonPanelProps = {
   selectedRouteId: string | null;
   onSelectRoute: (route: RouteAnalysis) => void;
   navigation: RouteNavigationEndpoints;
+  routeStops?: RouteStop[];
   compact?: boolean;
 };
 
@@ -57,12 +59,12 @@ function buildRejectionSummary(alt: RouteAnalysis, rec: RouteAnalysis): string {
 function RouteMapsButton({
   route,
   navigation,
-  routeLabel,
+  routeStops,
   className,
 }: {
   route: RouteAnalysis;
   navigation: RouteNavigationEndpoints;
-  routeLabel: string;
+  routeStops?: RouteStop[];
   className?: string;
 }) {
   return (
@@ -70,9 +72,8 @@ function RouteMapsButton({
       route={route}
       origin={navigation.origin}
       destination={navigation.destination}
-      routeLabel={routeLabel}
-      compact
-      className={cn("shrink-0 w-auto min-w-[7.5rem] px-2.5 py-1.5 text-[11px]", className)}
+      routeStops={routeStops}
+      className={className}
     />
   );
 }
@@ -83,6 +84,7 @@ export function RouteComparisonPanel({
   selectedRouteId,
   onSelectRoute,
   navigation,
+  routeStops,
   compact,
 }: RouteComparisonPanelProps) {
   const [reasonsOpen, setReasonsOpen] = useState(false);
@@ -97,11 +99,19 @@ export function RouteComparisonPanel({
     <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-border/80 bg-muted/40">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold tracking-tight">Compare routes</h3>
+          <h3 className="text-sm font-semibold tracking-tight">
+            {routes.length > 1 ? "Compare routes" : "Your green corridor"}
+          </h3>
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
             Tap to preview on map
           </span>
         </div>
+        {routeStops && routeStops.length > 0 && (
+          <p className="text-[11px] text-green-700 dark:text-green-400 mt-1.5">
+            {routeStops.length} healthcare stop{routeStops.length !== 1 ? "s" : ""} will be waypoints in
+            Google Maps
+          </p>
+        )}
       </div>
 
       <div className="flex gap-2 p-3 overflow-x-auto scrollbar-thin border-b border-border/60 bg-background/80">
@@ -137,7 +147,7 @@ export function RouteComparisonPanel({
                 </span>
               </button>
               <div className="flex items-center pr-1.5 shrink-0">
-                <RouteMapsButton route={r} navigation={navigation} routeLabel={label} />
+                <RouteMapsButton route={r} navigation={navigation} routeStops={routeStops} />
               </div>
             </div>
           );
@@ -180,11 +190,7 @@ export function RouteComparisonPanel({
                 Also fastest
               </span>
             )}
-            <RouteMapsButton
-              route={active}
-              navigation={navigation}
-              routeLabel={routeShortLabel(active)}
-            />
+            <RouteMapsButton route={active} navigation={navigation} routeStops={routeStops} />
           </div>
         </div>
 
@@ -292,7 +298,7 @@ export function RouteComparisonPanel({
                       </span>
                     )}
                   </button>
-                  <RouteMapsButton route={r} navigation={navigation} routeLabel={label} />
+                  <RouteMapsButton route={r} navigation={navigation} routeStops={routeStops} />
                 </div>
               );
             })}

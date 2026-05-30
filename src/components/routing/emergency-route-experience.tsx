@@ -5,8 +5,11 @@ import {
   type EmergencyWizardResult,
 } from "@/components/routing/emergency-route-wizard";
 import { EmergencyRouteMap } from "@/components/routing/emergency-route-map";
+import { HealthcareFacilityDetailSheet } from "@/components/routing/healthcare-facility-detail-sheet";
 import { HealthcareStopsPanel } from "@/components/routing/healthcare-stops-panel";
+import { RouteGoogleMapsCTA } from "@/components/routing/green-corridor-google-maps-cta";
 import { RouteComparisonPanel } from "@/components/routing/route-comparison-panel";
+import { useGreenCorridorRouteStops } from "@/components/routing/use-green-corridor-route-stops";
 import { filterFacilitiesForRoute } from "@/lib/hospitals/along-route";
 import {
   countNearbyPotholesForRoute,
@@ -46,6 +49,18 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
     result && activeRoute
       ? countNearbyPotholesForRoute(result.hazards, activeRoute)
       : 0;
+
+  const {
+    routeStops,
+    routeStopIds,
+    detailFacility,
+    detailOpen,
+    setDetailOpen,
+    openFacilityDetail,
+    toggleRouteStop,
+    clearRouteStops,
+    maxRouteStops,
+  } = useGreenCorridorRouteStops(activeRoute?.geometry);
 
   useEffect(() => {
     if (variant === "app") setWizardOpen(true);
@@ -107,6 +122,7 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
         onComplete={(r) => {
           setResult(r);
           setFocusRouteId(r.recommended.id);
+          clearRouteStops();
           if (isPublic) setWizardOpen(false);
         }}
         publicMode={isPublic}
@@ -168,6 +184,22 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
                 </Label>
               </div>
               </div>
+              {activeRoute && (
+                <RouteGoogleMapsCTA
+                  route={activeRoute}
+                  routeStops={routeStops}
+                  origin={{
+                    latitude: result.source.latitude,
+                    longitude: result.source.longitude,
+                    label: result.source.placeName ?? result.source.name,
+                  }}
+                  destination={{
+                    latitude: result.facility.latitude,
+                    longitude: result.facility.longitude,
+                    label: result.facility.name,
+                  }}
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -191,7 +223,11 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
               showNearbyPotholes={showNearbyPotholes}
               showHealthcareStops={showHealthcare}
               highlightFacilityId={highlightFacilityId}
-              onFacilitySelect={(f) => setHighlightFacilityId(f.id)}
+              routeStopIds={routeStopIds}
+              onFacilitySelect={(f) => {
+                setHighlightFacilityId(f.id);
+                openFacilityDetail(f);
+              }}
               comparisonMode
             />
 
@@ -201,17 +237,22 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
                 className="h-[min(480px,60vh)]"
                 facilities={routeHealthcareStops}
                 selectedId={highlightFacilityId}
-                onSelect={(f) => setHighlightFacilityId(f.id)}
+                routeStopIds={routeStopIds}
+                onOpenDetail={(f) => {
+                  setHighlightFacilityId(f.id);
+                  openFacilityDetail(f);
+                }}
               />
             )}
           </div>
 
-          {result.routes.length > 1 && activeRoute && (
+          {activeRoute && (
             <RouteComparisonPanel
               routes={result.routes}
               recommended={result.recommended}
               selectedRouteId={activeRouteId}
               onSelectRoute={(r) => setFocusRouteId(r.id)}
+              routeStops={routeStops}
               navigation={{
                 origin: {
                   latitude: result.source.latitude,
@@ -224,8 +265,19 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
                   label: result.facility.name,
                 },
               }}
+              compact={result.routes.length === 1}
             />
           )}
+
+          <HealthcareFacilityDetailSheet
+            facility={detailFacility}
+            open={detailOpen}
+            onOpenChange={setDetailOpen}
+            isRouteStop={detailFacility ? routeStopIds.includes(detailFacility.id) : false}
+            onToggleRouteStop={toggleRouteStop}
+            routeStopCount={routeStops.length}
+            maxRouteStops={maxRouteStops}
+          />
         </div>
       )}
     </div>

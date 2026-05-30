@@ -6,6 +6,7 @@ import {
   PrismaClient,
   Severity,
 } from "@prisma/client";
+import { resolveFacilityBloodGroups } from "../src/lib/hospitals/blood-groups";
 import { calculatePriorityScore } from "../src/lib/scoring/priority";
 import { calculateRoadHealthScore } from "../src/lib/scoring/road-health";
 
@@ -675,18 +676,21 @@ async function main() {
 
   for (const h of HEALTH_FACILITIES) {
     const existing = await prisma.hospital.findFirst({ where: { name: h.name } });
+    const hasBloodBank = h.hasBloodBank ?? h.kind === "BLOOD_BANK";
+    const bloodGroups = resolveFacilityBloodGroups(h.name, h.kind, hasBloodBank, null);
     const data = {
       type: h.type,
       kind: h.kind,
       hasIcu: h.hasIcu,
       hasEmergency: h.hasEmergency,
-      hasBloodBank: h.hasBloodBank ?? h.kind === "BLOOD_BANK",
+      hasBloodBank,
       phone: h.phone,
       address: h.address,
       briefInfo: h.briefInfo,
       latitude: h.lat,
       longitude: h.lng,
       open247: true,
+      ...(bloodGroups ? { metadata: { bloodGroups } } : {}),
     };
     if (existing) {
       await prisma.hospital.update({ where: { id: existing.id }, data });

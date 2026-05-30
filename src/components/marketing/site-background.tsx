@@ -46,7 +46,7 @@ export function SiteBackground() {
       {/* Light mode — scrim so text stays readable over softer hero */}
       <div
         className={cn(
-          "absolute inset-0 bg-gradient-to-b from-white/55 via-white/25 to-white/50 transition-opacity duration-500",
+          "absolute inset-0 bg-gradient-to-b from-white/70 via-white/40 to-white/65 transition-opacity duration-500",
           isDark ? "opacity-0" : "opacity-100",
         )}
       />

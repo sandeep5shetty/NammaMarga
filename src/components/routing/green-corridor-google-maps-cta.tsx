@@ -1,7 +1,11 @@
 "use client";
 
-import { buildGoogleMapsDirectionsUrl } from "@/lib/routing/google-maps-directions";
+import {
+  buildGoogleMapsDirectionsUrl,
+  countUserStopsOnRoute,
+} from "@/lib/routing/google-maps-directions";
 import type { RouteAnalysis } from "@/lib/routing/emergency-route";
+import { routeStopToMapsLatLng, type RouteStop } from "@/lib/routing/route-stops";
 import { cn } from "@/utils";
 import { Navigation } from "lucide-react";
 
@@ -12,20 +16,21 @@ export type RouteNavigationEndpoints = {
 
 export type RouteGoogleMapsCTAProps = RouteNavigationEndpoints & {
   route: Pick<RouteAnalysis, "geometry">;
-  /** e.g. "Green corridor" — shown in button for clarity */
-  routeLabel?: string;
+  /** Healthcare stops to include as Google Maps waypoints (ordered along the route). */
+  routeStops?: RouteStop[];
   className?: string;
-  compact?: boolean;
 };
 
 export function RouteGoogleMapsCTA({
   route,
   origin,
   destination,
-  routeLabel,
+  routeStops,
   className,
-  compact,
 }: RouteGoogleMapsCTAProps) {
+  const mapsStops = routeStops?.map(routeStopToMapsLatLng);
+  const stopsOnRoute = countUserStopsOnRoute(mapsStops, route.geometry);
+
   const href = buildGoogleMapsDirectionsUrl({
     origin: {
       latitude: origin.latitude,
@@ -38,31 +43,31 @@ export function RouteGoogleMapsCTA({
       label: destination.label,
     },
     geometry: route.geometry,
-    navigate: true,
+    userStops: mapsStops,
+    navigate: false,
   });
-
-  const buttonText = compact
-    ? "Google Maps"
-    : routeLabel
-      ? `Open ${routeLabel} in Google Maps`
-      : "Open in Google Maps";
+  const stopHint =
+    stopsOnRoute > 0
+      ? ` (${stopsOnRoute} healthcare stop${stopsOnRoute !== 1 ? "s" : ""} on this route)`
+      : "";
 
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={buttonText}
+      aria-label={`Open route in Google Maps${stopHint}`}
+      title={`Open in Google Maps${stopHint}`}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        "flex w-full items-center justify-center gap-2 rounded-lg font-semibold text-white",
+        "inline-flex items-center justify-center gap-1.5 rounded-md font-semibold text-white",
         "bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.99] transition-colors shadow-sm",
-        compact ? "px-3 py-2 text-xs" : "px-4 py-2.5 text-sm",
+        "px-3 py-1.5 text-xs shrink-0",
         className,
       )}
     >
-      <Navigation className={cn("shrink-0", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
-      {buttonText}
+      <Navigation className="h-3.5 w-3.5 shrink-0" />
+      Google Maps
     </a>
   );
 }

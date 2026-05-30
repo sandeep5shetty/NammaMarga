@@ -3,7 +3,7 @@
 import type { AlongRouteFacility } from "@/lib/hospitals/along-route";
 import { FACILITY_KIND_LABELS, FACILITY_KIND_MAP_COLOR } from "@/types/emergency";
 import { cn } from "@/utils";
-import { Droplet, Hospital, MapPin, Pill, Stethoscope, TestTube } from "lucide-react";
+import { ChevronRight, Droplet, Hospital, MapPin, Navigation, Pill, Stethoscope, TestTube } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { HealthFacilityKind } from "@prisma/client";
 
@@ -20,7 +20,8 @@ const KIND_ICON: Record<HealthFacilityKind, LucideIcon> = {
 type HealthcareStopsPanelProps = {
   facilities: AlongRouteFacility[];
   selectedId?: string | null;
-  onSelect?: (facility: AlongRouteFacility) => void;
+  routeStopIds?: string[];
+  onOpenDetail?: (facility: AlongRouteFacility) => void;
   /** Shorter cap for wizard / stacked layouts */
   compact?: boolean;
   /** Stretch to parent height (e.g. beside the map) */
@@ -31,11 +32,14 @@ type HealthcareStopsPanelProps = {
 export function HealthcareStopsPanel({
   facilities,
   selectedId,
-  onSelect,
+  routeStopIds = [],
+  onOpenDetail,
   compact,
   fillHeight,
   className,
 }: HealthcareStopsPanelProps) {
+  const stopSet = new Set(routeStopIds);
+
   if (facilities.length === 0) {
     return (
       <div
@@ -65,8 +69,14 @@ export function HealthcareStopsPanel({
         <div>
           <p className="text-sm font-semibold">On your route</p>
           <p className="text-[11px] text-muted-foreground">
-            {facilities.length} stop{facilities.length !== 1 ? "s" : ""} — tap to locate on map
+            {facilities.length} stop{facilities.length !== 1 ? "s" : ""} — tap for details & blood stock
           </p>
+          {routeStopIds.length > 0 && (
+            <p className="text-[11px] text-green-700 dark:text-green-400 font-medium mt-1 flex items-center gap-1">
+              <Navigation className="h-3 w-3" />
+              {routeStopIds.length} added to Google Maps
+            </p>
+          )}
         </div>
       </div>
       <ul
@@ -80,19 +90,25 @@ export function HealthcareStopsPanel({
           const Icon = KIND_ICON[f.kind] ?? MapPin;
           const color = FACILITY_KIND_MAP_COLOR[f.kind];
           const selected = f.id === selectedId;
+          const onRoute = stopSet.has(f.id);
+          const isBlood = f.kind === "BLOOD_BANK" || f.hasBloodBank;
 
           return (
             <li key={f.id}>
               <button
                 type="button"
-                onClick={() => onSelect?.(f)}
+                onClick={() => onOpenDetail?.(f)}
                 className={cn(
                   "w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40",
                   selected && "bg-primary/5",
+                  onRoute && "bg-green-500/5",
                 )}
               >
                 <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 shadow-sm"
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/20 shadow-sm",
+                    onRoute && "ring-2 ring-green-500 ring-offset-1 ring-offset-card",
+                  )}
                   style={{ backgroundColor: color, color: "#fff" }}
                 >
                   <Icon className="h-4 w-4" />
@@ -102,21 +118,26 @@ export function HealthcareStopsPanel({
                   <span className="text-[11px] text-muted-foreground mt-0.5 block">
                     {FACILITY_KIND_LABELS[f.kind]} · {f.distanceFromRouteM}m from route
                   </span>
-                  {(f.hasBloodBank || f.hasIcu) && (
-                    <span className="text-[10px] text-muted-foreground mt-1 flex flex-wrap gap-1.5">
-                      {f.hasBloodBank && (
-                        <span className="rounded bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5">
-                          Blood
-                        </span>
-                      )}
-                      {f.hasIcu && (
-                        <span className="rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 px-1.5 py-0.5">
-                          ICU
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  <span className="text-[10px] text-muted-foreground mt-1 flex flex-wrap gap-1.5 items-center">
+                    {onRoute && (
+                      <span className="rounded bg-green-600/15 text-green-700 dark:text-green-300 px-1.5 py-0.5 font-medium">
+                        On Maps route
+                      </span>
+                    )}
+                    {isBlood && f.bloodGroups && f.bloodGroups.length > 0 && (
+                      <span className="rounded bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5">
+                        {f.bloodGroups.slice(0, 4).join(" · ")}
+                        {f.bloodGroups.length > 4 ? "…" : ""}
+                      </span>
+                    )}
+                    {f.hasIcu && (
+                      <span className="rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 px-1.5 py-0.5">
+                        ICU
+                      </span>
+                    )}
+                  </span>
                 </span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-2" />
               </button>
             </li>
           );

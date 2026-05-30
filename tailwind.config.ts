@@ -74,6 +74,7 @@ const config = {
         "heading": ["var(--font-aeonik)"],
         "default": ["var(--font-inter)"],
         "serif": ["var(--font-instrument-serif)", "Georgia", "serif"],
+        "display": ["var(--font-instrument-serif)", "Georgia", "serif"],
       },
       keyframes: {
         "accordion-down": {

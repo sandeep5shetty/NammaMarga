@@ -32,6 +32,7 @@ type EmergencyRouteMapProps = {
   showNearbyPotholes?: boolean;
   showHealthcareStops?: boolean;
   highlightFacilityId?: string | null;
+  routeStopIds?: string[];
   onFacilitySelect?: (facility: AlongRouteFacility) => void;
   comparisonMode?: boolean;
   className?: string;
@@ -53,6 +54,7 @@ function createPotholeMarkerElement(h: CorridorHazard): HTMLButtonElement {
 function createFacilityMarkerElement(
   f: AlongRouteFacility,
   selected: boolean,
+  isRouteStop: boolean,
 ): HTMLButtonElement {
   const el = document.createElement("button");
   el.type = "button";
@@ -63,6 +65,7 @@ function createFacilityMarkerElement(
     "health-facility-pin flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-lg",
     "transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white",
     selected ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-black/40" : "",
+    isRouteStop ? "ring-2 ring-green-400 ring-offset-2 ring-offset-black/40" : "",
   ].join(" ");
   el.style.backgroundColor = color;
   const label = FACILITY_KIND_LABELS[f.kind].charAt(0);
@@ -160,6 +163,7 @@ export function EmergencyRouteMap({
   showNearbyPotholes = true,
   showHealthcareStops = true,
   highlightFacilityId = null,
+  routeStopIds = [],
   onFacilitySelect,
   comparisonMode = false,
   className,
@@ -226,9 +230,12 @@ export function EmergencyRouteMap({
     [showNearbyPotholes, focusRouteId, mapPotholes],
   );
 
+  const routeStopSet = useMemo(() => new Set(routeStopIds), [routeStopIds]);
+
   const facilitiesKey = useMemo(
-    () => visibleFacilities.map((f) => f.id).join(","),
-    [visibleFacilities],
+    () =>
+      `${visibleFacilities.map((f) => f.id).join(",")}|stops:${routeStopIds.join(",")}`,
+    [visibleFacilities, routeStopIds],
   );
 
   const endpointsKey = useMemo(
@@ -280,7 +287,7 @@ export function EmergencyRouteMap({
 
       for (const f of visibleFacilities) {
         const selected = f.id === highlightFacilityId;
-        const el = createFacilityMarkerElement(f, selected);
+        const el = createFacilityMarkerElement(f, selected, routeStopSet.has(f.id));
         el.addEventListener("click", (e) => {
           e.stopPropagation();
           onFacilitySelectRef.current?.(f);
@@ -301,7 +308,7 @@ export function EmergencyRouteMap({
         facilityMarkersRef.current.push(marker);
       }
     },
-    [visibleFacilities, showHealthcareStops, highlightFacilityId, isLight],
+    [visibleFacilities, showHealthcareStops, highlightFacilityId, routeStopSet, isLight],
   );
 
   const fitMapToCorridor = useCallback(

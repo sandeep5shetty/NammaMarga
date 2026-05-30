@@ -1,7 +1,9 @@
 "use client";
 
 import { EmergencyRouteMap } from "@/components/routing/emergency-route-map";
+import { HealthcareFacilityDetailSheet } from "@/components/routing/healthcare-facility-detail-sheet";
 import { HealthcareStopsPanel } from "@/components/routing/healthcare-stops-panel";
+import { useGreenCorridorRouteStops } from "@/components/routing/use-green-corridor-route-stops";
 import { PlaceSearch, type PlaceSelection } from "@/components/routing/place-search";
 import { RouteComparisonPanel } from "@/components/routing/route-comparison-panel";
 import {
@@ -135,6 +137,26 @@ export function EmergencyRouteWizard({
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const mapWrapperRef = useRef<HTMLDivElement>(null);
 
+  const activeRouteId = focusRouteId ?? recommended?.id ?? null;
+  const activeRoute =
+    routes.find((r) => r.id === activeRouteId) ?? recommended ?? null;
+  const routeHealthcareStops = filterFacilitiesForRoute(
+    alongRouteFacilities,
+    activeRouteId,
+  );
+
+  const {
+    routeStops,
+    routeStopIds,
+    detailFacility,
+    detailOpen,
+    setDetailOpen,
+    openFacilityDetail,
+    toggleRouteStop,
+    clearRouteStops,
+    maxRouteStops,
+  } = useGreenCorridorRouteStops(activeRoute?.geometry);
+
   const reset = useCallback(() => {
     setStep(1);
     setSource(null);
@@ -151,13 +173,8 @@ export function EmergencyRouteWizard({
     setShowNearbyPotholes(true);
     setShowHealthcare(true);
     setMapFullscreen(false);
-  }, []);
-
-  const activeRouteId = focusRouteId ?? recommended?.id ?? null;
-  const routeHealthcareStops = filterFacilitiesForRoute(
-    alongRouteFacilities,
-    activeRouteId,
-  );
+    clearRouteStops();
+  }, [clearRouteStops]);
 
   const toggleMapFullscreen = async () => {
     const el = mapWrapperRef.current;
@@ -533,7 +550,11 @@ export function EmergencyRouteWizard({
                             setHighlightFacilityId(null);
                           }}
                           highlightFacilityId={highlightFacilityId}
-                          onFacilitySelect={(f) => setHighlightFacilityId(f.id)}
+                          routeStopIds={routeStopIds}
+                          onFacilitySelect={(f) => {
+                            setHighlightFacilityId(f.id);
+                            openFacilityDetail(f);
+                          }}
                           showNearbyPotholes={showNearbyPotholes}
                           showHealthcareStops={showHealthcare}
                           comparisonMode
@@ -557,16 +578,21 @@ export function EmergencyRouteWizard({
                           compact
                           facilities={routeHealthcareStops}
                           selectedId={highlightFacilityId}
-                          onSelect={(f) => setHighlightFacilityId(f.id)}
+                          routeStopIds={routeStopIds}
+                          onOpenDetail={(f) => {
+                            setHighlightFacilityId(f.id);
+                            openFacilityDetail(f);
+                          }}
                         />
                       )}
 
-                      {selectedFacility && source && (
+                      {selectedFacility && source && recommended && (
                         <RouteComparisonPanel
                           routes={routes}
                           recommended={recommended}
                           selectedRouteId={focusRouteId ?? recommended.id}
                           onSelectRoute={(r) => setFocusRouteId(r.id)}
+                          routeStops={routeStops}
                           navigation={{
                             origin: {
                               latitude: source.latitude,
@@ -582,6 +608,18 @@ export function EmergencyRouteWizard({
                           compact
                         />
                       )}
+
+                      <HealthcareFacilityDetailSheet
+                        facility={detailFacility}
+                        open={detailOpen}
+                        onOpenChange={setDetailOpen}
+                        isRouteStop={
+                          detailFacility ? routeStopIds.includes(detailFacility.id) : false
+                        }
+                        onToggleRouteStop={toggleRouteStop}
+                        routeStopCount={routeStops.length}
+                        maxRouteStops={maxRouteStops}
+                      />
                     </>
                   )}
                 </motion.div>

@@ -3,6 +3,7 @@ import { classifyRequestSchema } from "@/lib/ai/schemas";
 import { detectWithRoboflow } from "@/lib/ai/roboflow";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { withRateLimit } from "@/lib/api/middleware-helpers";
+import { isReportableIssueType } from "@/lib/issues/reportable-types";
 import { ISSUE_TYPE_LABELS } from "@/types/civic";
 import { NextResponse } from "next/server";
 
@@ -27,9 +28,10 @@ export async function POST(request: Request) {
 
     const roboflow = await detectWithRoboflow(parsed.data.imageUrl);
 
-    if (roboflow) {
+    if (roboflow && isReportableIssueType(roboflow.primaryType)) {
       return NextResponse.json({
         data: {
+          accepted: true as const,
           type: roboflow.primaryType,
           severity: roboflow.severity,
           confidence: roboflow.confidence,
@@ -47,7 +49,29 @@ export async function POST(request: Request) {
       parsed.data.description,
     );
 
-    return NextResponse.json({ data: { ...result, provider: "openai" } });
+    if (!result.accepted) {
+      return NextResponse.json({
+        data: {
+          accepted: false as const,
+          reason: result.reason,
+          summary: result.summary,
+          provider: "openai",
+        },
+      });
+    }
+
+    return NextResponse.json({
+      data: {
+        accepted: true as const,
+        type: result.type,
+        severity: result.severity,
+        confidence: result.confidence,
+        title: result.title,
+        summary: result.summary,
+        reasoning: result.reasoning,
+        provider: "openai",
+      },
+    });
   } catch (error) {
     console.error("[AI classify]", error);
     return NextResponse.json(

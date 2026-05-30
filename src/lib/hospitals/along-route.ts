@@ -1,3 +1,4 @@
+import { resolveFacilityBloodGroups, type BloodGroup } from "@/lib/hospitals/blood-groups";
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
 import type { RouteCoordinate } from "@/lib/routing/emergency-route";
@@ -22,6 +23,7 @@ export type AlongRouteFacility = {
   hasEmergency: boolean;
   distanceFromRouteM: number;
   routeIds: string[];
+  bloodGroups?: BloodGroup[];
 };
 
 const FACILITY_SELECT = {
@@ -35,6 +37,7 @@ const FACILITY_SELECT = {
   briefInfo: true,
   hasIcu: true,
   hasEmergency: true,
+  metadata: true,
 } as const;
 
 type HospitalRow = {
@@ -49,6 +52,7 @@ type HospitalRow = {
   hasIcu: boolean;
   hasEmergency: boolean;
   hasBloodBank: boolean;
+  metadata: unknown;
 };
 
 async function fetchHospitalsInBounds(
@@ -72,6 +76,7 @@ async function fetchHospitalsInBounds(
     return rows.map((r) => ({
       ...r,
       hasBloodBank: r.kind === "BLOOD_BANK",
+      metadata: null,
     }));
   }
 }
@@ -154,6 +159,13 @@ function matchFacilitiesToRoutes(
 
     if (routeIds.length === 0) continue;
 
+    const bloodGroups = resolveFacilityBloodGroups(
+      f.name,
+      f.kind,
+      f.hasBloodBank,
+      f.metadata,
+    );
+
     byId.set(f.id, {
       id: f.id,
       name: f.name,
@@ -168,6 +180,7 @@ function matchFacilitiesToRoutes(
       hasEmergency: f.hasEmergency,
       distanceFromRouteM: Math.round(minDistKm * 1000),
       routeIds,
+      ...(bloodGroups ? { bloodGroups } : {}),
     });
   }
 

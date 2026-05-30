@@ -14,8 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  getReportableTypeListText,
+  isReportableIssueType,
+} from "@/lib/issues/reportable-types";
 import { ISSUE_TYPE_LABELS, STATUS_LABELS } from "@/types/civic";
-import type { IssueClassification } from "@/types/civic";
+import type { IssueClassification, IssueClassificationRejected } from "@/types/civic";
 import { findNearestWard } from "@/utils/constants/wards";
 import {
   AlertTriangle,
@@ -62,6 +66,8 @@ export default function ReportPage() {
   const [wardId, setWardId] = useState("");
   const [wards, setWards] = useState<Array<{ id: string; name: string; number: number }>>([]);
   const [classification, setClassification] = useState<IssueClassification | null>(null);
+  const [classificationRejected, setClassificationRejected] =
+    useState<IssueClassificationRejected | null>(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -95,6 +101,7 @@ export default function ReportPage() {
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
     setClassification(null);
+    setClassificationRejected(null);
     setDuplicateCheck(null);
   }, []);
 
@@ -194,7 +201,50 @@ export default function ReportPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setClassification(json.data);
+
+      const data = json.data as {
+        accepted?: boolean;
+        reason?: string;
+        summary?: string;
+        type?: IssueClassification["type"];
+        severity?: IssueClassification["severity"];
+        confidence?: number;
+        title?: string;
+        reasoning?: string;
+      };
+
+      if (data.accepted === false) {
+        setClassification(null);
+        setClassificationRejected({
+          accepted: false,
+          reason: data.reason ?? "This photo cannot be reported as a civic issue.",
+          summary: data.summary,
+        });
+        setDuplicateCheck(null);
+        toast.warning("This photo cannot be reported — see details below");
+        return;
+      }
+
+      if (!data.type || !isReportableIssueType(data.type)) {
+        setClassification(null);
+        setClassificationRejected({
+          accepted: false,
+          reason: "AI returned an unsupported issue type. Please use a clear photo of a pothole, garbage, streetlight, or other civic infrastructure problem.",
+        });
+        setDuplicateCheck(null);
+        toast.warning("Unsupported issue type");
+        return;
+      }
+
+      setClassificationRejected(null);
+      setClassification({
+        type: data.type,
+        severity: data.severity!,
+        confidence: data.confidence ?? 0,
+        title: data.title ?? "Civic issue",
+        summary: data.summary ?? "",
+        reasoning: data.reasoning ?? "",
+      });
       setDuplicateCheck(null);
       toast.success("AI classification complete");
       (window as unknown as { _uploadedUrl?: string })._uploadedUrl = imageUrl;
@@ -206,8 +256,16 @@ export default function ReportPage() {
   };
 
   const submitReport = async () => {
-    if (!classification || latitude == null || longitude == null) {
-      toast.error("Complete AI classification and enable location first");
+    if (classificationRejected) {
+      toast.error("This photo was not accepted as a reportable civic issue");
+      return;
+    }
+    if (!classification || !isReportableIssueType(classification.type)) {
+      toast.error("Complete AI classification with a supported issue type first");
+      return;
+    }
+    if (latitude == null || longitude == null) {
+      toast.error("Enable location before submitting");
       return;
     }
 
@@ -235,7 +293,16 @@ export default function ReportPage() {
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
+      if (!res.ok) {
+        if (json.code === "UNSUPPORTED_ISSUE_TYPE") {
+          setClassification(null);
+          setClassificationRejected({
+            accepted: false,
+            reason: json.error ?? "Unsupported issue type",
+          });
+        }
+        throw new Error(json.error);
+      }
 
       toast.success("Issue reported successfully!");
       router.push(`/dashboard/reports/${json.data.id}`);
@@ -251,7 +318,11 @@ export default function ReportPage() {
       <div>
         <h1 className="text-2xl md:text-3xl font-bold font-heading">Report Civic Issue</h1>
         <p className="text-muted-foreground mt-1">
-          Upload a photo — AI will classify the issue, detect severity, and geo-tag it
+          Upload a photo of a civic infrastructure problem — AI classifies it into one of our
+          supported categories and geo-tags the report.
+        </p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Supported: {getReportableTypeListText()}
         </p>
       </div>
 
@@ -365,7 +436,31 @@ export default function ReportPage() {
             Analyze with AI
           </Button>
 
-          {classification && (
+          {classificationRejected && (
+            <Card className="border-red-500/50 bg-red-500/5">
+              <CardContent className="pt-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Cannot report this photo</p>
+                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                      {classificationRejected.reason}
+                    </p>
+                    {classificationRejected.summary && (
+                      <p className="text-xs text-muted-foreground mt-2 italic">
+                        {classificationRejected.summary}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Please upload a clear photo of: {getReportableTypeListText()}.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {classification && !classificationRejected && (
             <div className="rounded-lg bg-muted/50 p-4 space-y-3">
               <p className="font-semibold">{classification.title}</p>
               <p className="text-sm text-muted-foreground">{classification.summary}</p>
@@ -445,12 +540,17 @@ export default function ReportPage() {
         </CardContent>
       </Card>
 
-      {!duplicateCheck?.isDuplicate && (
+      {!duplicateCheck?.isDuplicate && !classificationRejected && (
         <Button
           size="lg"
           className="w-full"
           onClick={() => void submitReport()}
-          disabled={!classification || isSubmitting || isCheckingDuplicate}
+          disabled={
+            !classification ||
+            !isReportableIssueType(classification.type) ||
+            isSubmitting ||
+            isCheckingDuplicate
+          }
         >
           {isSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
           Submit Report
