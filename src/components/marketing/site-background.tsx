@@ -25,7 +25,7 @@ export function SiteBackground() {
         sizes="100vw"
         className={cn(
           "object-cover object-center transition-opacity duration-500",
-          isDark ? "opacity-0" : "opacity-100",
+          isDark ? "opacity-0" : "opacity-35",
         )}
       />
 
@@ -43,10 +43,10 @@ export function SiteBackground() {
         )}
       />
 
-      {/* Light mode — subtle scrim for text */}
+      {/* Light mode — scrim so text stays readable over softer hero */}
       <div
         className={cn(
-          "absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-white/40 transition-opacity duration-500",
+          "absolute inset-0 bg-gradient-to-b from-white/55 via-white/25 to-white/50 transition-opacity duration-500",
           isDark ? "opacity-0" : "opacity-100",
         )}
       />

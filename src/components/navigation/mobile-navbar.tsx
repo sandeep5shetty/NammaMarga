@@ -17,7 +17,7 @@ import { cn, NAV_LINKS } from "@/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
-import { LucideIcon, Menu, X } from "lucide-react";
+import { LucideIcon, Menu, Shield, X } from "lucide-react";
 import Link from "next/link";
 import React, { useState } from 'react';
 
@@ -54,6 +54,14 @@ const MobileNavbar = () => {
                         </Button>
                     </SheetClose>
                     <div className="flex flex-col items-start w-full py-2 mt-10">
+                        <Link
+                            href="/emergency-route"
+                            onClick={handleClose}
+                            className={cn(buttonVariants({ className: "w-full mb-2" }), "border-green-500/40 bg-green-500/5")}
+                        >
+                            <Shield className="w-4 h-4 mr-2 text-green-600" />
+                            Emergency Route
+                        </Link>
                         <div className="flex items-center justify-evenly w-full space-x-2">
                             {isSignedIn ? (
                                 <Link href="/dashboard" className={buttonVariants({ variant: "outline", className: "w-full" })}>

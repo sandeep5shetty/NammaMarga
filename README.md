@@ -1,79 +1,55 @@
-<img src="https://github.com/user-attachments/assets/e1e0fe16-21f4-44c8-a22d-39b4494433a1" alt="Link Management Logo" width="50" height="50">
+# NammaMarg — AI-Powered Civic Road Intelligence
 
-# 🔗 Linkify - The Link Management Platform for Businesses(Landing Page)
+NammaMarg helps Bengaluru citizens report potholes and civic issues, enables BBMP to prioritize ward queues, and provides pothole-aware emergency green corridor routing.
 
-<!-- <img src="https://github.com/user-attachments/assets/deab03fd-4234-44c3-a6ad-484c4a1a02a1" alt="Linkify Thubmnail"> -->
-<img src="https://github.com/user-attachments/assets/ee867e8e-7871-4289-bd56-3eef40adb9b2" alt="Linkify Thumbnail" style="border-radius: 50px;" width="1280">
+## Features
 
+- **Citizen reporting** — Photo upload with AI classification (potholes, garbage, waterlogging, etc.)
+- **Live civic map** — Heatmaps, ward filters, road health overlays
+- **Duplicate detection** — Merges nearby reports within ~50m
+- **Community verification** — AI-powered before/after fix checks
+- **BBMP dashboard** — Priority queue, analytics, contractors, tenders
+- **Emergency routing** — Green corridor to hospitals using live pothole data (no login required)
 
-## 🌟 Introduction
-Linkify is an innovative link management software designed to help you shorten, track, and optimize your links effortlessly. Built with React, Node.js, and MongoDB, Linkify provides powerful analytics and user-friendly features to enhance your link-sharing experience.
+## Tech stack
 
-## 🚀 Features
+- Next.js 15 · TypeScript · Tailwind · shadcn/ui
+- Supabase Auth · PostgreSQL · Prisma
+- Mapbox (maps, geocoding, directions)
+- OpenAI · Roboflow (optional) for vision
 
-- **Link Shortening:** Easily create short links for better sharing.
-- **Analytics Dashboard:** Track clicks, user engagement, and performance metrics.
-- **Customizable Links:** Create branded links that reflect your identity.
-- **AI-Powered Suggestions:** Get smart recommendations for link optimization.
+## Local setup
 
-## 🔗 Live Preview
+1. Clone the repository and install dependencies:
 
-Check out the live demo of Linkify here: [Live Preview](http://Linkify-demo.vercel.app)
+```bash
+npm install
+```
 
-## 🎥 Watch Demo on YouTube
+2. Copy `.env.example` to `.env.local` and configure:
 
-Check out the tutorial to see how this link management system was built: [Watch the Tutorial](https://youtu.be/3_sZPAfVR_U) 💻 
+- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `DATABASE_URL` (PostgreSQL)
+- `NEXT_PUBLIC_MAPBOX_TOKEN`
+- `OPENAI_API_KEY` (optional `ROBOFLOW_*`)
 
-## 💻 Tech Stack
+3. Push schema and seed demo data:
 
-* Next.js
-* Tailwind CSS
-* Shadcn UI
-* Magic UI
-* Aceternity UI
-* Prisma
-* Supabase (PostgreSQL + Auth)
-* React Hook Form
+```bash
+npm run db:push
+npm run db:seed
+```
 
-## 🛠️ Installation
-To run Linkify locally, follow these steps:
+4. Add Supabase redirect URLs: `http://localhost:3000/auth/confirm`, `http://localhost:3000/auth/auth-callback`
 
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/Shreyas-29/linkify.git
-    ```
-2. Install dependencies:
-    ```bash
-    npm install
-    ```
-3. Create a [Supabase](https://supabase.com) project and copy `.env.example` to `.env.local`. Fill in:
-    - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from **Project Settings → API**
-    - `DATABASE_URL` from **Project Settings → Database** (PostgreSQL connection string)
+5. Run the dev server:
 
-4. Push the Prisma schema to your database:
-    ```bash
-    npx prisma migrate dev --name init
-    ```
+```bash
+npm run dev
+```
 
-5. In Supabase **Authentication → URL Configuration**, add redirect URLs:
-    - `http://localhost:3000/auth/confirm`
-    - `http://localhost:3000/auth/auth-callback`
+See [DEMO.md](./DEMO.md) for a judging demo script.
 
-6. Run the development server:
-    ```bash
-    npm run dev
-    ```
+## License
 
-## ☕ Buy Me a Coffee
-If you enjoy using Linkify, consider supporting my work!  
-[Buy Me a Coffee ☕](https://buymeacoffee.com/shreyas29)
-
-## 📜 License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## 💬 Contact
-If you have any questions or feedback, feel free to reach out via [GitHub Issues](https://github.com/Shreyas-29/linkify/issues).
-
----
-
-Built with ❤️ by [Shreyas](https://shreyas-sihasane.vercel.app/)
+MIT — see [LICENSE](./LICENSE).

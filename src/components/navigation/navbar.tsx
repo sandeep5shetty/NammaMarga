@@ -13,7 +13,7 @@ import {
 import { cn, NAV_LINKS } from "@/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useUser } from "@/hooks/use-user";
-import { LucideIcon, ZapIcon } from "lucide-react";
+import { LucideIcon, Shield, ZapIcon } from "lucide-react";
 import Link from "next/link";
 import React, { useEffect, useState } from 'react';
 import MaxWidthWrapper from "../global/max-width-wrapper";
@@ -119,6 +119,16 @@ const Navbar = () => {
 
                     <div className="hidden lg:flex items-center gap-x-2">
                         <ThemeToggle />
+                        <Link
+                            href="/emergency-route"
+                            className={cn(
+                                buttonVariants({ size: "sm", variant: "outline" }),
+                                "border-green-500/40 text-green-700 dark:text-green-400 hover:bg-green-500/10 hidden xl:inline-flex",
+                            )}
+                        >
+                            <Shield className="size-3.5 mr-1.5" />
+                            Emergency Route
+                        </Link>
                         {user ? (
                             <div className="flex items-center">
                                 <Link href="/dashboard" className={buttonVariants({ size: "sm", })}>

@@ -44,15 +44,175 @@ const ROADS = [
   { name: "Bannerghatta Road", wardNumber: 14, lat1: 12.935, lng1: 77.575, lat2: 12.925, lng2: 77.59 },
 ];
 
-const HOSPITALS = [
-  { name: "Manipal Hospital Old Airport Road", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.958, lng: 77.649, phone: "080-2502-4444", address: "Old Airport Road, Bengaluru" },
-  { name: "St. John's Medical College Hospital", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.936, lng: 77.626, phone: "080-2206-5000", address: "Sarjapur Road, Bengaluru" },
-  { name: "Columbia Asia Hospital Whitefield", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.969, lng: 77.749, phone: "080-6660-6666", address: "Whitefield, Bengaluru" },
-  { name: "Victoria Hospital", type: "GENERAL" as const, hasIcu: true, hasEmergency: true, lat: 12.959, lng: 77.573, phone: "080-2670-0810", address: "KR Market, Bengaluru" },
-  { name: "Bowring & Lady Curzon Hospital", type: "GENERAL" as const, hasIcu: false, hasEmergency: true, lat: 12.985, lng: 77.603, phone: "080-2559-1324", address: "Shivajinagar, Bengaluru" },
-  { name: "Narayana Health City", type: "TRAUMA" as const, hasIcu: true, hasEmergency: true, lat: 12.878, lng: 77.645, phone: "080-6755-6755", address: "Bommasandra, Bengaluru" },
-  { name: "Sakra World Hospital", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.931, lng: 77.667, phone: "080-4968-4968", address: "Marathahalli, Bengaluru" },
-  { name: "Apollo Hospitals Bannerghatta", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.896, lng: 77.598, phone: "080-2630-4050", address: "Bannerghatta Road, Bengaluru" },
+const HEALTH_FACILITIES = [
+  {
+    name: "Manipal Hospital Old Airport Road",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.958,
+    lng: 77.649,
+    phone: "080-2502-4444",
+    address: "Old Airport Road, Bengaluru",
+    briefInfo: "24/7 emergency, ICU, cardiac & neuro specialties. Major referral hospital.",
+  },
+  {
+    name: "St. John's Medical College Hospital",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.936,
+    lng: 77.626,
+    phone: "080-2206-5000",
+    address: "Sarjapur Road, Bengaluru",
+    briefInfo: "Teaching hospital with full emergency dept, trauma team, and blood bank.",
+  },
+  {
+    name: "Columbia Asia Hospital Whitefield",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.969,
+    lng: 77.749,
+    phone: "080-6660-6666",
+    address: "Whitefield, Bengaluru",
+    briefInfo: "Multispecialty ER, ICU beds, ambulance bay on ORR side.",
+  },
+  {
+    name: "Victoria Hospital",
+    type: "GENERAL" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.959,
+    lng: 77.573,
+    phone: "080-2670-0810",
+    address: "KR Market, Bengaluru",
+    briefInfo: "Government tertiary hospital — high volume emergency, affordable care.",
+  },
+  {
+    name: "Bowring & Lady Curzon Hospital",
+    type: "GENERAL" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    lat: 12.985,
+    lng: 77.603,
+    phone: "080-2559-1324",
+    address: "Shivajinagar, Bengaluru",
+    briefInfo: "Central Bengaluru emergency — good for quick stabilization.",
+  },
+  {
+    name: "Narayana Health City",
+    type: "TRAUMA" as const,
+    kind: "TRAUMA_CENTER" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.878,
+    lng: 77.645,
+    phone: "080-6755-6755",
+    address: "Bommasandra, Bengaluru",
+    briefInfo: "Dedicated trauma & cardiac centre — best for critical accidents.",
+  },
+  {
+    name: "Sakra World Hospital",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.931,
+    lng: 77.667,
+    phone: "080-4968-4968",
+    address: "Marathahalli, Bengaluru",
+    briefInfo: "East Bengaluru ER with ICU, stroke unit, and helipad access.",
+  },
+  {
+    name: "Apollo Hospitals Bannerghatta",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.896,
+    lng: 77.598,
+    phone: "080-2630-4050",
+    address: "Bannerghatta Road, Bengaluru",
+    briefInfo: "South zone emergency — trauma, ICU, and specialist on-call.",
+  },
+  {
+    name: "BBMP First Aid Post — Koramangala",
+    type: "GENERAL" as const,
+    kind: "FIRST_AID" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    lat: 12.928,
+    lng: 77.628,
+    phone: "080-2297-0000",
+    address: "80 Feet Road, Koramangala",
+    briefInfo: "Municipal first-aid — wound care, stabilization before hospital transfer.",
+  },
+  {
+    name: "BBMP First Aid Post — Indiranagar",
+    type: "GENERAL" as const,
+    kind: "FIRST_AID" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    lat: 12.978,
+    lng: 77.641,
+    phone: "080-2297-0001",
+    address: "100 Feet Road, Indiranagar",
+    briefInfo: "Quick triage, bandaging, vitals — refer to hospital if critical.",
+  },
+  {
+    name: "BBMP First Aid Post — MG Road",
+    type: "GENERAL" as const,
+    kind: "FIRST_AID" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    lat: 12.975,
+    lng: 77.607,
+    phone: "080-2297-0002",
+    address: "MG Road, Bengaluru",
+    briefInfo: "Central CBD first-aid — ideal for minor injuries & initial response.",
+  },
+  {
+    name: "108 Ambulance First Response — Hebbal",
+    type: "GENERAL" as const,
+    kind: "FIRST_AID" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    lat: 13.035,
+    lng: 77.595,
+    phone: "108",
+    address: "Hebbal flyover junction",
+    briefInfo: "108 EMS staging point — oxygen, basic life support, hospital routing.",
+  },
+  {
+    name: "Trauma Care Centre — Hosur Road",
+    type: "TRAUMA" as const,
+    kind: "TRAUMA_CENTER" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.912,
+    lng: 77.601,
+    phone: "080-4110-0000",
+    address: "Hosur Road, Bengaluru",
+    briefInfo: "Accident & trauma focus — ortho, neuro surgery on standby.",
+  },
+  {
+    name: "Fortis Hospital Cunningham Road",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    lat: 12.99,
+    lng: 77.587,
+    phone: "080-4199-0000",
+    address: "Cunningham Road, Bengaluru",
+    briefInfo: "Central emergency with ICU — good access from Shivajinagar & CBD.",
+  },
 ];
 
 const POTHOLE_IMAGES = [
@@ -154,22 +314,24 @@ async function main() {
     }
   }
 
-  for (const h of HOSPITALS) {
+  for (const h of HEALTH_FACILITIES) {
     const existing = await prisma.hospital.findFirst({ where: { name: h.name } });
-    if (!existing) {
-      await prisma.hospital.create({
-        data: {
-          name: h.name,
-          type: h.type,
-          hasIcu: h.hasIcu,
-          hasEmergency: h.hasEmergency,
-          phone: h.phone,
-          address: h.address,
-          latitude: h.lat,
-          longitude: h.lng,
-          open247: true,
-        },
-      });
+    const data = {
+      type: h.type,
+      kind: h.kind,
+      hasIcu: h.hasIcu,
+      hasEmergency: h.hasEmergency,
+      phone: h.phone,
+      address: h.address,
+      briefInfo: h.briefInfo,
+      latitude: h.lat,
+      longitude: h.lng,
+      open247: true,
+    };
+    if (existing) {
+      await prisma.hospital.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.hospital.create({ data: { name: h.name, ...data } });
     }
   }
 
@@ -301,7 +463,7 @@ async function main() {
   console.log(`  - ${potholeCount} potholes created (${potholes} total potholes in DB)`);
   console.log(`  - ${otherCount} other civic issues`);
   console.log(`  - ${total} total seed issues`);
-  console.log(`  - ${roads.length} road segments, ${HOSPITALS.length} hospitals`);
+  console.log(`  - ${roads.length} road segments, ${HEALTH_FACILITIES.length} health facilities`);
 }
 
 main()

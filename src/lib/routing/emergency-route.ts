@@ -1,5 +1,8 @@
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
+import { estimateEtaMinutes, VEHICLE_PROFILES } from "@/lib/routing/vehicle-profiles";
+import type { EmergencyVehicleType, IssueType } from "@prisma/client";
+
 export type RouteCoordinate = [number, number];
 
 export type HazardIssue = {
@@ -9,6 +12,15 @@ export type HazardIssue = {
   severity: string;
   latitude: number;
   longitude: number;
+  priorityScore?: number;
+};
+
+export type CorridorHazard = HazardIssue & {
+  isPothole: boolean;
+  onRoutes: string[];
+  onRecommendedRoute: boolean;
+  onlyOnAlternates: boolean;
+  nearestRouteM: number;
 };
 
 type MapboxRoute = {
@@ -38,35 +50,58 @@ export type RouteAnalysis = {
   reasons: string[];
   warnings: string[];
   comparisonNote: string | null;
+  hazardsAlongRoute: HazardIssue[];
+};
+
+export type CivicDataSummary = {
+  totalActiveIssues: number;
+  potholesInCorridor: number;
 };
 
 export type EmergencyRouteResult = {
   recommended: RouteAnalysis;
   routes: RouteAnalysis[];
-  hazardsOnMap: HazardIssue[];
+  corridorHazards: CorridorHazard[];
+  civicData: CivicDataSummary;
   source: { lat: number; lng: number; label?: string };
   destination: { lat: number; lng: number; label?: string };
 };
 
-const SEVERITY_WEIGHT: Record<string, number> = {
-  CRITICAL: 25,
-  HIGH: 12,
-  MEDIUM: 5,
-  LOW: 2,
+const ISSUE_TYPE_WEIGHT: Record<string, number> = {
+  POTHOLE: 30,
+  ROAD_DAMAGE: 22,
+  WATERLOGGING: 20,
+  WATER_LEAK: 14,
+  FALLEN_TREE: 18,
+  SEWAGE: 12,
+  GARBAGE: 8,
+  STREETLIGHT: 6,
+  TRAFFIC_SIGNAL: 10,
+  OTHER: 5,
 };
 
-const BUFFER_KM = 0.06;
+const SEVERITY_WEIGHT: Record<string, number> = {
+  CRITICAL: 25,
+  HIGH: 14,
+  MEDIUM: 7,
+  LOW: 3,
+};
+
+const BUFFER_KM = 0.08;
+const ACTIVE_STATUSES = ["REPORTED", "ACKNOWLEDGED", "IN_PROGRESS"] as const;
 
 async function fetchMapboxRoutes(
   source: { lat: number; lng: number },
   dest: { lat: number; lng: number },
+  vehicleType: EmergencyVehicleType = "AMBULANCE",
 ): Promise<MapboxRoute[]> {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!token) throw new Error("Mapbox token not configured");
 
+  const profile = VEHICLE_PROFILES[vehicleType].mapboxProfile;
   const coords = `${source.lng},${source.lat};${dest.lng},${dest.lat}`;
   const url =
-    `https://api.mapbox.com/directions/v5/mapbox/driving/${coords}` +
+    `https://api.mapbox.com/directions/v5/${profile}/${coords}` +
     `?alternatives=true` +
     `&geometries=geojson` +
     `&overview=full` +
@@ -93,19 +128,27 @@ async function fetchMapboxRoutes(
   );
 }
 
-function getBounds(geometry: RouteCoordinate[]) {
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-  let minLng = Infinity;
-  let maxLng = -Infinity;
-  for (const [lng, lat] of geometry) {
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
-  }
-  const pad = 0.02;
-  return { minLat: minLat - pad, maxLat: maxLat + pad, minLng: minLng - pad, maxLng: maxLng + pad };
+function getCorridorBounds(
+  source: { lat: number; lng: number },
+  dest: { lat: number; lng: number },
+  padDeg = 0.04,
+) {
+  return {
+    minLat: Math.min(source.lat, dest.lat) - padDeg,
+    maxLat: Math.max(source.lat, dest.lat) + padDeg,
+    minLng: Math.min(source.lng, dest.lng) - padDeg,
+    maxLng: Math.max(source.lng, dest.lng) + padDeg,
+  };
+}
+
+function densifyGeometry(geometry: RouteCoordinate[], maxPoints = 120): RouteCoordinate[] {
+  if (geometry.length <= maxPoints) return geometry;
+  const step = Math.ceil(geometry.length / maxPoints);
+  const out: RouteCoordinate[] = [];
+  for (let i = 0; i < geometry.length; i += step) out.push(geometry[i]);
+  const last = geometry[geometry.length - 1];
+  if (out[out.length - 1] !== last) out.push(last);
+  return out;
 }
 
 function pointToSegmentDistanceKm(
@@ -116,10 +159,9 @@ function pointToSegmentDistanceKm(
   lat2: number,
   lng2: number,
 ): number {
-  const samples = 5;
   let min = Infinity;
-  for (let i = 0; i <= samples; i++) {
-    const t = i / samples;
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
     const sLat = lat1 + t * (lat2 - lat1);
     const sLng = lng1 + t * (lng2 - lng1);
     const d = haversineDistance(
@@ -131,20 +173,34 @@ function pointToSegmentDistanceKm(
   return min;
 }
 
-/**
- * Dijkstra-style weighted corridor cost: each polyline segment accumulates
- * length + hazard penalty for civic issues (especially potholes) in buffer.
- */
-function scoreRouteHazards(
+function minDistanceToRouteKm(
+  lat: number,
+  lng: number,
   geometry: RouteCoordinate[],
-  issues: Array<{
-    id: string;
-    title: string;
-    type: string;
-    severity: string;
-    latitude: number;
-    longitude: number;
-  }>,
+): number {
+  let min = Infinity;
+  for (let i = 0; i < geometry.length - 1; i++) {
+    const [lng1, lat1] = geometry[i];
+    const [lng2, lat2] = geometry[i + 1];
+    min = Math.min(min, pointToSegmentDistanceKm(lat, lng, lat1, lng1, lat2, lng2));
+  }
+  return min;
+}
+
+type IssueRow = {
+  id: string;
+  title: string;
+  type: IssueType;
+  severity: string;
+  latitude: number;
+  longitude: number;
+  priorityScore: number;
+};
+
+/** Weighted corridor scoring against live potholes & civic issues from NammaMarga DB. */
+function scoreRouteAgainstCivicData(
+  geometry: RouteCoordinate[],
+  issues: IssueRow[],
 ): {
   hazardIndex: number;
   routeRisk: number;
@@ -157,6 +213,7 @@ function scoreRouteHazards(
   lowCount: number;
   matchedIssues: HazardIssue[];
 } {
+  const dense = densifyGeometry(geometry);
   const matchedIds = new Set<string>();
   const matchedIssues: HazardIssue[] = [];
   let hazardIndex = 0;
@@ -166,14 +223,13 @@ function scoreRouteHazards(
   let lowCount = 0;
   let potholeCount = 0;
 
-  for (let i = 0; i < geometry.length - 1; i++) {
-    const [lng1, lat1] = geometry[i];
-    const [lng2, lat2] = geometry[i + 1];
-    const segLen = haversineDistance(
+  for (let i = 0; i < dense.length - 1; i++) {
+    const [lng1, lat1] = dense[i];
+    const [lng2, lat2] = dense[i + 1];
+    hazardIndex += haversineDistance(
       { latitude: lat1, longitude: lng1 },
       { latitude: lat2, longitude: lng2 },
     );
-    hazardIndex += segLen;
 
     for (const issue of issues) {
       const dist = pointToSegmentDistanceKm(
@@ -186,8 +242,11 @@ function scoreRouteHazards(
       );
       if (dist <= BUFFER_KM && !matchedIds.has(issue.id)) {
         matchedIds.add(issue.id);
-        const weight = SEVERITY_WEIGHT[issue.severity] ?? 5;
-        hazardIndex += weight * 0.15;
+        const typeW = ISSUE_TYPE_WEIGHT[issue.type] ?? 8;
+        const sevW = SEVERITY_WEIGHT[issue.severity] ?? 5;
+        const weight = typeW + sevW;
+        hazardIndex += weight * 0.12;
+
         matchedIssues.push({
           id: issue.id,
           title: issue.title,
@@ -195,6 +254,7 @@ function scoreRouteHazards(
           severity: issue.severity,
           latitude: issue.latitude,
           longitude: issue.longitude,
+          priorityScore: issue.priorityScore,
         });
 
         if (issue.type === "POTHOLE") potholeCount++;
@@ -207,9 +267,9 @@ function scoreRouteHazards(
   }
 
   const routeRisk = Math.round(
-    criticalCount * 20 + highCount * 12 + mediumCount * 6 + lowCount * 2 + potholeCount * 4,
+    criticalCount * 22 + highCount * 14 + mediumCount * 7 + lowCount * 3 + potholeCount * 8,
   );
-  const safetyScore = Math.max(0, Math.min(100, 100 - Math.min(routeRisk, 95)));
+  const safetyScore = Math.max(0, Math.min(100, 100 - Math.min(routeRisk, 98)));
 
   return {
     hazardIndex,
@@ -228,83 +288,112 @@ function scoreRouteHazards(
 function buildReasons(
   analysis: RouteAnalysis,
   recommended: RouteAnalysis | null,
-  isFastest: boolean,
+  allRoutes: RouteAnalysis[],
+  civicData: CivicDataSummary,
 ): { reasons: string[]; warnings: string[]; comparisonNote: string | null } {
   const reasons: string[] = [];
   const warnings: string[] = [];
 
   if (analysis.isRecommended) {
-    reasons.push(`Green corridor — highest safety score (${analysis.safetyScore}/100) among available routes`);
+    reasons.push(
+      `Selected from ${allRoutes.length} Mapbox alternates using live NammaMarga civic data (${civicData.totalActiveIssues} active issues, ${civicData.potholesInCorridor} potholes in corridor)`,
+    );
+    reasons.push(`Lowest hazard index (${analysis.hazardIndex.toFixed(1)}) — green corridor avoids pothole clusters`);
     if (analysis.potholeCount === 0) {
-      reasons.push("No active potholes detected within 60m of this corridor");
+      reasons.push("Avoids all mapped potholes within 80m of the route");
     } else {
-      reasons.push(`Lowest pothole exposure: ${analysis.potholeCount} pothole(s) near corridor`);
+      const others = allRoutes.filter((r) => !r.isRecommended);
+      const maxPotholes = Math.max(...others.map((r) => r.potholeCount), 0);
+      if (maxPotholes > analysis.potholeCount) {
+        reasons.push(
+          `Fewest potholes on corridor: ${analysis.potholeCount} vs up to ${maxPotholes} on faster routes`,
+        );
+      } else {
+        reasons.push(`${analysis.potholeCount} pothole(s) near corridor — lowest exposure available`);
+      }
     }
     if (analysis.criticalCount === 0) {
-      reasons.push("Avoids critical-severity road hazards");
+      reasons.push("No critical-severity hazards directly on this path");
     } else {
-      warnings.push(`${analysis.criticalCount} critical issue(s) still near this route — drive with caution`);
+      warnings.push(`${analysis.criticalCount} critical hazard(s) still near route — proceed with caution`);
     }
-    reasons.push(
-      `Weighted path analysis (Dijkstra-style hazard costs) favors this route over faster alternatives`,
-    );
   } else if (recommended) {
-    if (analysis.potholeCount > recommended.potholeCount + 2) {
+    if (analysis.potholeCount > recommended.potholeCount) {
       warnings.push(
-        `${analysis.potholeCount - recommended.potholeCount} more potholes than the recommended route`,
+        `${analysis.potholeCount - recommended.potholeCount} more pothole(s) than green corridor (${recommended.potholeCount})`,
       );
     }
-    if (analysis.safetyScore < recommended.safetyScore - 10) {
+    if (analysis.issueCount > recommended.issueCount) {
+      warnings.push(`${analysis.issueCount - recommended.issueCount} more civic hazards on this path`);
+    }
+    if (analysis.hazardIndex > recommended.hazardIndex * 1.15) {
       warnings.push(
-        `Safety score ${analysis.safetyScore}/100 vs ${recommended.safetyScore}/100 on green corridor`,
+        `Higher hazard index (${analysis.hazardIndex.toFixed(1)} vs ${recommended.hazardIndex.toFixed(1)})`,
       );
     }
-    if (analysis.criticalCount > recommended.criticalCount) {
-      warnings.push(`More critical hazards (${analysis.criticalCount}) than recommended route`);
+    if (analysis.isFastest) {
+      reasons.push(`~${Math.round(analysis.durationMinutes - recommended.durationMinutes)} min faster but less safe`);
     }
-  }
-
-  if (isFastest && !analysis.isRecommended) {
-    reasons.push(`Fastest option (~${Math.round(analysis.durationMinutes)} min) but not the safest`);
-  }
-
-  if (analysis.issueCount === 0 && !analysis.isRecommended) {
-    reasons.push("Few mapped hazards, but other routes score better overall");
   }
 
   const comparisonNote =
     recommended && !analysis.isRecommended
-      ? `Not recommended: ${analysis.potholeCount} potholes & ${analysis.issueCount} hazards vs ${recommended.potholeCount} potholes on green corridor`
+      ? `Not recommended: ${analysis.potholeCount} potholes, ${analysis.issueCount} hazards (green corridor: ${recommended.potholeCount} potholes, ${recommended.issueCount} hazards)`
       : null;
 
   return { reasons, warnings, comparisonNote };
 }
 
+function buildCorridorHazards(
+  issues: IssueRow[],
+  routes: Array<{ id: string; geometry: RouteCoordinate[]; isRecommended: boolean }>,
+  recommendedId: string,
+): CorridorHazard[] {
+  return issues.map((issue) => {
+    const onRoutes: string[] = [];
+    let nearestRouteM = Infinity;
+
+    for (const route of routes) {
+      const d = minDistanceToRouteKm(issue.latitude, issue.longitude, route.geometry);
+      nearestRouteM = Math.min(nearestRouteM, d);
+      if (d <= BUFFER_KM) onRoutes.push(route.id);
+    }
+
+    const onRecommendedRoute = onRoutes.includes(recommendedId);
+    const onlyOnAlternates = onRoutes.length > 0 && !onRecommendedRoute;
+
+    return {
+      id: issue.id,
+      title: issue.title,
+      type: issue.type,
+      severity: issue.severity,
+      latitude: issue.latitude,
+      longitude: issue.longitude,
+      priorityScore: issue.priorityScore,
+      isPothole: issue.type === "POTHOLE",
+      onRoutes,
+      onRecommendedRoute,
+      onlyOnAlternates,
+      nearestRouteM: Math.round(nearestRouteM * 1000),
+    };
+  });
+}
+
 export async function getEmergencyRoutes(
   source: { lat: number; lng: number; label?: string },
   dest: { lat: number; lng: number; label?: string },
+  options?: { vehicleType?: EmergencyVehicleType },
 ): Promise<EmergencyRouteResult> {
-  const mapboxRoutes = await fetchMapboxRoutes(source, dest);
-
-  const allBounds = mapboxRoutes.reduce(
-    (acc, r) => {
-      const b = getBounds(r.geometry);
-      return {
-        minLat: Math.min(acc.minLat, b.minLat),
-        maxLat: Math.max(acc.maxLat, b.maxLat),
-        minLng: Math.min(acc.minLng, b.minLng),
-        maxLng: Math.max(acc.maxLng, b.maxLng),
-      };
-    },
-    { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity },
-  );
+  const vehicleType = options?.vehicleType ?? "AMBULANCE";
+  const mapboxRoutes = await fetchMapboxRoutes(source, dest, vehicleType);
+  const bounds = getCorridorBounds(source, dest);
 
   const issues = await db.issue.findMany({
     where: {
       duplicateOfId: null,
-      status: { in: ["REPORTED", "ACKNOWLEDGED", "IN_PROGRESS"] },
-      latitude: { gte: allBounds.minLat, lte: allBounds.maxLat },
-      longitude: { gte: allBounds.minLng, lte: allBounds.maxLng },
+      status: { in: [...ACTIVE_STATUSES] },
+      latitude: { gte: bounds.minLat, lte: bounds.maxLat },
+      longitude: { gte: bounds.minLng, lte: bounds.maxLng },
     },
     select: {
       id: true,
@@ -313,21 +402,21 @@ export async function getEmergencyRoutes(
       severity: true,
       latitude: true,
       longitude: true,
+      priorityScore: true,
     },
+    orderBy: { priorityScore: "desc" },
   });
 
   const analyses: RouteAnalysis[] = mapboxRoutes.map((route, index) => {
-    const scored = scoreRouteHazards(route.geometry, issues);
+    const scored = scoreRouteAgainstCivicData(route.geometry, issues);
     const distanceKm = route.distance / 1000;
-    const durationMinutes = route.duration / 60;
-
     return {
       id: `route-${index}`,
       routeIndex: index,
-      label: index === 0 ? "Primary corridor" : `Alternate ${index}`,
+      label: `Route option ${index + 1}`,
       geometry: route.geometry,
       distanceKm,
-      durationMinutes,
+      durationMinutes: estimateEtaMinutes(distanceKm, vehicleType),
       safetyScore: scored.safetyScore,
       routeRisk: scored.routeRisk,
       hazardIndex: scored.hazardIndex,
@@ -342,77 +431,67 @@ export async function getEmergencyRoutes(
       reasons: [],
       warnings: [],
       comparisonNote: null,
+      hazardsAlongRoute: scored.matchedIssues,
     };
   });
 
   const fastestIdx = analyses.reduce((best, r, i) =>
     r.durationMinutes < analyses[best].durationMinutes ? i : best, 0);
   analyses[fastestIdx].isFastest = true;
-  analyses[fastestIdx].label = "Fastest route";
 
   const recommendedIdx = analyses.reduce((best, r, i) => {
     const a = analyses[best];
-  const b = r;
-    const scoreA = a.safetyScore - a.durationMinutes * 0.3;
-    const scoreB = b.safetyScore - b.durationMinutes * 0.3;
-    return scoreB > scoreA ? i : best;
+    const b = r;
+    if (b.hazardIndex < a.hazardIndex - 0.5) return i;
+    if (Math.abs(b.hazardIndex - a.hazardIndex) < 0.5 && b.safetyScore > a.safetyScore) return i;
+    return best;
   }, 0);
 
   analyses[recommendedIdx].isRecommended = true;
   analyses[recommendedIdx].label = "Green corridor (recommended)";
+  analyses[fastestIdx].label = fastestIdx === recommendedIdx
+    ? "Green corridor (recommended · fastest)"
+    : "Fastest route";
 
   const recommended = analyses[recommendedIdx];
+  const civicData: CivicDataSummary = {
+    totalActiveIssues: issues.length,
+    potholesInCorridor: issues.filter((i) => i.type === "POTHOLE").length,
+  };
 
   for (let i = 0; i < analyses.length; i++) {
-    const partial = analyses[i];
     const { reasons, warnings, comparisonNote } = buildReasons(
-      { ...partial, reasons: [], warnings: [], comparisonNote: null },
-      { ...recommended, reasons: [], warnings: [], comparisonNote: null },
-      i === fastestIdx,
+      analyses[i],
+      recommended,
+      analyses,
+      civicData,
     );
     analyses[i].reasons = reasons;
     analyses[i].warnings = warnings;
     analyses[i].comparisonNote = comparisonNote;
     if (i !== recommendedIdx && i !== fastestIdx) {
-      analyses[i].label = `Alternate route ${i}`;
+      analyses[i].label = `Alternate route ${i + 1}`;
     }
   }
 
-  const hazardsOnMap = issues
-    .filter((issue) => {
-      const minDist = Math.min(
-        ...mapboxRoutes.map((route) =>
-          Math.min(
-            ...route.geometry.map(([lng, lat]) =>
-              haversineDistance(
-                { latitude: lat, longitude: lng },
-                { latitude: issue.latitude, longitude: issue.longitude },
-              ),
-            ),
-          ),
-        ),
-      );
-      return minDist < 0.12;
-    })
-    .map((i) => ({
-      id: i.id,
-      title: i.title,
-      type: i.type,
-      severity: i.severity,
-      latitude: i.latitude,
-      longitude: i.longitude,
-    }));
+  const routeMeta = analyses.map((r) => ({
+    id: r.id,
+    geometry: r.geometry,
+    isRecommended: r.isRecommended,
+  }));
+  const corridorHazards = buildCorridorHazards(issues, routeMeta, recommended.id);
 
   const sorted = [...analyses].sort((a, b) => {
     if (a.isRecommended) return -1;
     if (b.isRecommended) return 1;
-    return b.safetyScore - a.safetyScore;
+    return a.hazardIndex - b.hazardIndex;
   });
 
   return {
-    recommended: analyses[recommendedIdx],
+    recommended,
     routes: sorted,
-    hazardsOnMap,
+    corridorHazards,
+    civicData,
     source,
     destination: dest,
   };

@@ -26,6 +26,19 @@ enum HospitalType {
   TRAUMA
 }
 
+enum HealthFacilityKind {
+  HOSPITAL
+  FIRST_AID
+  TRAUMA_CENTER
+}
+
+enum EmergencyVehicleType {
+  AMBULANCE
+  FIRE_ENGINE
+  PRIVATE_CAR
+  TWO_WHEELER
+}
+
 enum IssueType {
   POTHOLE
   GARBAGE
@@ -251,36 +264,42 @@ model IssueStatusHistory {
 }
 
 model Hospital {
-  id           String       @id @default(cuid())
+  id           String             @id @default(cuid())
   name         String
-  type         HospitalType @default(GENERAL)
-  hasIcu       Boolean      @default(false)
-  hasEmergency Boolean      @default(true)
+  type         HospitalType       @default(GENERAL)
+  kind         HealthFacilityKind @default(HOSPITAL)
+  hasIcu       Boolean            @default(false)
+  hasEmergency Boolean            @default(true)
   phone        String?
   address      String?
+  briefInfo    String?
   latitude     Float
   longitude    Float
-  open247      Boolean      @default(true)
+  open247      Boolean            @default(true)
   metadata     Json?
-  createdAt    DateTime     @default(now())
+  createdAt    DateTime           @default(now())
 
   @@index([hasIcu])
   @@index([hasEmergency])
+  @@index([kind])
   @@index([latitude, longitude])
 }
 
 model RouteRequest {
-  id               String   @id @default(cuid())
-  requestedByUserId String?
-  sourceLat        Float
-  sourceLng        Float
-  destLat          Float
-  destLng          Float
-  selectedRouteType String?
-  result           Json?
-  createdAt        DateTime @default(now())
+  id                    String                @id @default(cuid())
+  requestedByUserId     String?
+  sourceLat             Float
+  sourceLng             Float
+  destLat               Float
+  destLng               Float
+  vehicleType           EmergencyVehicleType?
+  destinationHospitalId String?
+  selectedRouteType     String?
+  result                Json?
+  createdAt             DateTime              @default(now())
 
   @@index([createdAt])
+  @@index([destinationHospitalId])
 }
 
 model Verification {

@@ -1,4 +1,4 @@
-import { AnimationContainer, MaxWidthWrapper, PricingCards } from "@/components";
+import { AnimationContainer, MaxWidthWrapper } from "@/components";
 import { BentoCard, BentoGrid, CARDS } from "@/components/ui/bento-grid";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { COMPANIES, PROCESS } from "@/utils";
 import { REVIEWS } from "@/utils/constants/misc";
 import { ThemeAwareDashboardImage } from "@/components/marketing/theme-aware-dashboard-image";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowRightIcon, CreditCardIcon, StarIcon } from "lucide-react";
+import { ArrowRightIcon, Shield, StarIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -51,14 +51,23 @@ const HomePage = async () => {
                                 Track resolution, verify fixes, and help BBMP build better Bangalore.
                             </span>
                         </p>
-                        <div className="flex items-center justify-center whitespace-nowrap gap-4 z-50">
-                            <Button asChild size="lg" className="shadow-md shadow-emerald-900/10 dark:shadow-lg dark:shadow-black/20">
-                                <Link href={user ? "/dashboard" : "/auth/sign-in"} className="flex items-center">
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 z-50">
+                            <Button asChild size="lg" className="shadow-md shadow-emerald-900/10 dark:shadow-lg dark:shadow-black/20 w-full sm:w-auto">
+                                <Link href={user ? "/dashboard" : "/auth/sign-in"} className="flex items-center justify-center">
                                     Report an issue
                                     <ArrowRightIcon className="w-4 h-4 ml-2" />
                                 </Link>
                             </Button>
+                            <Button asChild size="lg" variant="outline" className="w-full sm:w-auto border-green-500/50 bg-green-500/5 hover:bg-green-500/10 dark:border-green-500/40">
+                                <Link href="/emergency-route" className="flex items-center justify-center">
+                                    <Shield className="w-4 h-4 mr-2 text-green-600 dark:text-green-400" />
+                                    Emergency Route
+                                </Link>
+                            </Button>
                         </div>
+                        <p className="text-xs text-muted-foreground mt-3 z-50">
+                            Emergency routing is free — no account needed
+                        </p>
                     </AnimationContainer>
 
                     <AnimationContainer delay={0.2} className="relative pt-20 pb-20 md:py-32 px-2 w-full">
@@ -83,7 +92,7 @@ const HomePage = async () => {
                     <div className="py-14">
                         <div className="mx-auto px-4 md:px-8">
                             <h2 className="text-center text-sm font-medium font-heading text-muted-foreground uppercase">
-                                Trusted by the best in the industry
+                                Built for Bengaluru&apos;s civic ecosystem
                             </h2>
                             <div className="mt-8">
                                 <ul className="flex flex-wrap items-center gap-x-6 gap-y-6 md:gap-x-16 justify-center">
@@ -163,34 +172,6 @@ const HomePage = async () => {
                         </AnimationContainer>
                     ))}
                 </div>
-            </MaxWidthWrapper>
-
-            {/* Pricing Section */}
-            <MaxWidthWrapper className="py-10">
-                <AnimationContainer delay={0.1}>
-                    <div className="flex flex-col items-center lg:items-center justify-center w-full py-8 max-w-xl mx-auto">
-                        <MagicBadge title="Impact" />
-                        <h2 className="text-center lg:text-center text-3xl md:text-5xl !leading-[1.1] font-medium font-heading text-foreground mt-6">
-                            Building a better Bangalore together
-                        </h2>
-                        <p className="mt-4 text-center lg:text-center text-lg text-muted-foreground max-w-lg">
-                            Join thousands of citizens and BBMP officials making Bangalore&apos;s infrastructure smarter.
-                        </p>
-                    </div>
-                </AnimationContainer>
-                <AnimationContainer delay={0.2}>
-                    <PricingCards />
-                </AnimationContainer>
-                <AnimationContainer delay={0.3}>
-                    <div className="flex flex-wrap items-start md:items-center justify-center lg:justify-evenly gap-6 mt-12 max-w-5xl mx-auto w-full">
-                        <div className="flex items-center gap-2">
-                            <CreditCardIcon className="w-5 h-5 text-foreground" />
-                            <span className="text-muted-foreground">
-                                No credit card required
-                            </span>
-                        </div>
-                    </div>
-                </AnimationContainer>
             </MaxWidthWrapper>
 
             {/* Reviews Section */}
@@ -305,10 +286,16 @@ const HomePage = async () => {
                             <p className="text-muted-foreground mt-6 max-w-md mx-auto">
                                 Report issues, track fixes, and verify improvements — all powered by AI for a smarter Bangalore.
                             </p>
-                            <div className="mt-6">
+                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                                 <Button asChild>
                                     <Link href="/report">
                                         Report an issue
+                                        <ArrowRightIcon className="w-4 h-4 ml-2" />
+                                    </Link>
+                                </Button>
+                                <Button asChild variant="outline">
+                                    <Link href="/emergency-route">
+                                        Emergency route
                                         <ArrowRightIcon className="w-4 h-4 ml-2" />
                                     </Link>
                                 </Button>

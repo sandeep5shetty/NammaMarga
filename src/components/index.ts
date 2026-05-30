@@ -17,9 +17,6 @@ import Providers from "./providers/providers";
 import { DashboardSidebar } from "./dashboard/sidebar";
 import DashboardNavbar from "./dashboard/dashboard-navbar";
 
-// pricing
-import PricingCards from "./pricing-cards";
-
 // blog
 import Blogs from "./blog/blogs";
 
@@ -38,8 +35,6 @@ export {
 
     DashboardSidebar,
     DashboardNavbar,
-
-    PricingCards,
 
     Blogs,
 };

@@ -2,16 +2,19 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { findNearestHospitals } from "@/lib/hospitals/nearest";
 import { getEmergencyRoutes } from "@/lib/routing/emergency-route";
 import { db } from "@/lib/prisma";
+import type { EmergencyVehicleType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const schema = z.object({
   sourceLat: z.number(),
   sourceLng: z.number(),
-  destLat: z.number(),
-  destLng: z.number(),
+  destLat: z.number().optional(),
+  destLng: z.number().optional(),
+  hospitalId: z.string().optional(),
   sourceLabel: z.string().optional(),
   destLabel: z.string().optional(),
+  vehicleType: z.enum(["AMBULANCE", "FIRE_ENGINE", "PRIVATE_CAR", "TWO_WHEELER"]).optional(),
   includeHospitals: z.boolean().optional(),
 });
 
@@ -24,12 +27,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const { sourceLat, sourceLng, destLat, destLng, sourceLabel, destLabel } = parsed.data;
+    const {
+      sourceLat,
+      sourceLng,
+      sourceLabel,
+      destLabel,
+      hospitalId,
+      vehicleType = "AMBULANCE",
+    } = parsed.data;
+
+    let destLat = parsed.data.destLat;
+    let destLng = parsed.data.destLng;
+    let destinationLabel = destLabel;
+
+    if (hospitalId) {
+      const hospital = await db.hospital.findUnique({ where: { id: hospitalId } });
+      if (!hospital) {
+        return NextResponse.json({ error: "Hospital not found" }, { status: 404 });
+      }
+      destLat = hospital.latitude;
+      destLng = hospital.longitude;
+      destinationLabel = hospital.name;
+    }
+
+    if (destLat == null || destLng == null) {
+      return NextResponse.json({ error: "Destination or hospitalId required" }, { status: 400 });
+    }
 
     const result = await getEmergencyRoutes(
       { lat: sourceLat, lng: sourceLng, label: sourceLabel },
-      { lat: destLat, lng: destLng, label: destLabel },
+      { lat: destLat, lng: destLng, label: destinationLabel },
+      { vehicleType: vehicleType as EmergencyVehicleType },
     );
+
+    const selectedHospital = hospitalId
+      ? await db.hospital.findUnique({ where: { id: hospitalId } })
+      : null;
 
     const hospitals =
       parsed.data.includeHospitals !== false
@@ -37,17 +70,10 @@ export async function POST(request: Request) {
             latitude: sourceLat,
             longitude: sourceLng,
             routeSafetyScore: result.recommended.safetyScore,
+            vehicleType: vehicleType as EmergencyVehicleType,
             limit: 5,
           })
         : [];
-
-    const icuHospitals = await findNearestHospitals({
-      latitude: sourceLat,
-      longitude: sourceLng,
-      icuOnly: true,
-      limit: 3,
-      routeSafetyScore: result.recommended.safetyScore,
-    });
 
     if (user) {
       await db.routeRequest.create({
@@ -57,8 +83,10 @@ export async function POST(request: Request) {
           sourceLng,
           destLat,
           destLng,
+          vehicleType: vehicleType as EmergencyVehicleType,
+          destinationHospitalId: hospitalId ?? null,
           selectedRouteType: "safest",
-          result: { ...result, hospitals, icuHospitals } as object,
+          result: { ...result, selectedHospital } as object,
         },
       });
     }
@@ -67,12 +95,14 @@ export async function POST(request: Request) {
       data: {
         recommended: result.recommended,
         routes: result.routes,
-        hazardsOnMap: result.hazardsOnMap,
+        corridorHazards: result.corridorHazards,
+        civicData: result.civicData,
+        hazardsOnMap: result.corridorHazards,
         source: result.source,
         destination: result.destination,
+        selectedHospital,
+        vehicleType,
         hospitals,
-        nearestHospital: hospitals[0] ?? null,
-        nearestIcuHospital: icuHospitals[0] ?? null,
       },
     });
   } catch (error) {

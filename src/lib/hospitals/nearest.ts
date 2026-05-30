@@ -1,10 +1,14 @@
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
+import { estimateEtaMinutes } from "@/lib/routing/vehicle-profiles";
+import type { EmergencyVehicleType, HealthFacilityKind } from "@prisma/client";
 
 export type HospitalResult = {
   id: string;
   name: string;
   type: string;
+  kind: HealthFacilityKind;
+  briefInfo: string | null;
   hasIcu: boolean;
   hasEmergency: boolean;
   phone: string | null;
@@ -16,28 +20,39 @@ export type HospitalResult = {
   score: number;
 };
 
-function estimateEtaMinutes(distanceKm: number): number {
-  const avgSpeedKmh = 25;
-  return Math.round((distanceKm / avgSpeedKmh) * 60);
-}
-
 export function scoreHospital(params: {
   distanceKm: number;
   hasIcu: boolean;
   hasEmergency: boolean;
   open247: boolean;
+  kind: HealthFacilityKind;
+  vehicleType?: EmergencyVehicleType;
   routeSafetyScore?: number;
 }): number {
   const maxDist = 15;
   const distanceScore = Math.max(0, 1 - params.distanceKm / maxDist) * 100;
   const etaScore = Math.max(0, 1 - params.distanceKm / 10) * 100;
-  const capabilityScore =
-    (params.hasEmergency ? 40 : 0) + (params.hasIcu ? 40 : 0) + (params.open247 ? 20 : 0);
+
+  let capabilityScore =
+    (params.hasEmergency ? 35 : 0) + (params.hasIcu ? 35 : 0) + (params.open247 ? 15 : 0);
+
+  if (params.kind === "TRAUMA_CENTER") capabilityScore += 25;
+  else if (params.kind === "HOSPITAL") capabilityScore += 15;
+  else if (params.kind === "FIRST_AID") capabilityScore += 10;
+
+  const vehicle = params.vehicleType ?? "AMBULANCE";
+  if (vehicle === "AMBULANCE" && params.kind === "FIRST_AID") {
+    capabilityScore *= 0.85;
+  }
+  if (vehicle === "AMBULANCE" && params.kind === "TRAUMA_CENTER") {
+    capabilityScore *= 1.15;
+  }
+
   const safety = params.routeSafetyScore ?? 70;
 
   return (
-    etaScore * 0.45 +
-    distanceScore * 0.25 +
+    etaScore * 0.42 +
+    distanceScore * 0.28 +
     capabilityScore * 0.2 +
     safety * 0.1
   );
@@ -49,10 +64,13 @@ export async function findNearestHospitals(params: {
   icuOnly?: boolean;
   limit?: number;
   routeSafetyScore?: number;
+  vehicleType?: EmergencyVehicleType;
 }): Promise<HospitalResult[]> {
   const hospitals = await db.hospital.findMany({
     where: params.icuOnly ? { hasIcu: true } : undefined,
   });
+
+  const vehicle = params.vehicleType ?? "AMBULANCE";
 
   const ranked = hospitals
     .map((h) => {
@@ -60,12 +78,14 @@ export async function findNearestHospitals(params: {
         { latitude: params.latitude, longitude: params.longitude },
         { latitude: h.latitude, longitude: h.longitude },
       );
-      const etaMinutes = estimateEtaMinutes(distanceKm);
+      const etaMinutes = estimateEtaMinutes(distanceKm, vehicle);
       const score = scoreHospital({
         distanceKm,
         hasIcu: h.hasIcu,
         hasEmergency: h.hasEmergency,
         open247: h.open247,
+        kind: h.kind,
+        vehicleType: vehicle,
         routeSafetyScore: params.routeSafetyScore,
       });
 
@@ -73,6 +93,8 @@ export async function findNearestHospitals(params: {
         id: h.id,
         name: h.name,
         type: h.type,
+        kind: h.kind,
+        briefInfo: h.briefInfo,
         hasIcu: h.hasIcu,
         hasEmergency: h.hasEmergency,
         phone: h.phone,
@@ -86,5 +108,5 @@ export async function findNearestHospitals(params: {
     })
     .sort((a, b) => b.score - a.score);
 
-  return ranked.slice(0, params.limit ?? 5);
+  return ranked.slice(0, params.limit ?? 8);
 }
