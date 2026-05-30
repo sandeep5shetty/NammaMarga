@@ -49,10 +49,25 @@ export async function GET() {
     const wards = await db.ward.findMany();
     const wardMap = Object.fromEntries(wards.map((w) => [w.id, w.name]));
 
+    const [criticalIssues, roadSegments, avgRoadHealth] = await Promise.all([
+      db.issue.count({
+        where: { severity: "CRITICAL", duplicateOfId: null, status: { notIn: ["RESOLVED", "VERIFIED"] } },
+      }),
+      db.roadSegment.findMany({
+        select: { id: true, name: true, healthScore: true, wardId: true },
+        orderBy: { healthScore: "asc" },
+        take: 10,
+      }),
+      db.roadSegment.aggregate({ _avg: { healthScore: true } }),
+    ]);
+
     return NextResponse.json({
       data: {
         totalIssues,
         resolvedIssues,
+        criticalIssues,
+        averageRoadHealth: Math.round(avgRoadHealth._avg.healthScore ?? 100),
+        poorestRoads: roadSegments,
         resolutionRate: totalIssues ? resolvedIssues / totalIssues : 0,
         byType: byType.map((t) => ({ type: t.type, count: t._count })),
         bySeverity: bySeverity.map((s) => ({ severity: s.severity, count: s._count })),

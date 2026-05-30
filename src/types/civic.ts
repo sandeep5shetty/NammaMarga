@@ -65,6 +65,7 @@ export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
   GARBAGE: "Garbage Dump",
   SEWAGE: "Sewage Problem",
   WATER_LEAK: "Water Leakage",
+  WATERLOGGING: "Waterlogging",
   STREETLIGHT: "Broken Streetlight",
   ROAD_DAMAGE: "Road Damage",
   TRAFFIC_SIGNAL: "Traffic Signal Issue",

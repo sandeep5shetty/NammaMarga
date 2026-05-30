@@ -1,6 +1,15 @@
-import { PrismaClient } from "@prisma/client";
+import {
+  IssueStatus,
+  IssueType,
+  PrismaClient,
+  Severity,
+} from "@prisma/client";
+import { calculatePriorityScore } from "../src/lib/scoring/priority";
+import { calculateRoadHealthScore } from "../src/lib/scoring/road-health";
 
 const prisma = new PrismaClient();
+
+const SEED_PREFIX = "[SEED]";
 
 const WARDS = [
   { number: 1, name: "Hebbal", zone: "North", latitude: 13.0358, longitude: 77.597 },
@@ -20,13 +29,148 @@ const WARDS = [
   { number: 15, name: "Electronic City", zone: "South", latitude: 12.8399, longitude: 77.677 },
 ];
 
+const ROADS = [
+  { name: "MG Road Corridor", wardNumber: 13, lat1: 12.975, lng1: 77.6, lat2: 12.97, lng2: 77.62 },
+  { name: "Outer Ring Road - Marathahalli", wardNumber: 12, lat1: 12.959, lng1: 77.7, lat2: 12.95, lng2: 77.72 },
+  { name: "Koramangala 80 Feet Road", wardNumber: 9, lat1: 12.93, lng1: 77.62, lat2: 12.92, lng2: 77.64 },
+  { name: "Jayanagar 4th Block Main", wardNumber: 7, lat1: 12.93, lng1: 77.59, lat2: 12.92, lng2: 77.6 },
+  { name: "Whitefield Main Road", wardNumber: 11, lat1: 12.97, lng1: 77.75, lat2: 12.96, lng2: 77.77 },
+  { name: "Hebbal Flyover Approach", wardNumber: 1, lat1: 13.04, lng1: 77.59, lat2: 13.03, lng2: 77.61 },
+  { name: "Indiranagar 100 Feet Road", wardNumber: 10, lat1: 12.98, lng1: 77.64, lat2: 12.97, lng2: 77.66 },
+  { name: "BTM 2nd Stage Ring", wardNumber: 8, lat1: 12.92, lng1: 77.61, lat2: 12.91, lng2: 77.63 },
+  { name: "Hosur Road Stretch", wardNumber: 8, lat1: 12.915, lng1: 77.605, lat2: 12.908, lng2: 77.62 },
+  { name: "Old Airport Road", wardNumber: 10, lat1: 12.955, lng1: 77.655, lat2: 12.948, lng2: 77.67 },
+  { name: "Sarjapur Road", wardNumber: 12, lat1: 12.92, lng1: 77.665, lat2: 12.91, lng2: 77.685 },
+  { name: "Bannerghatta Road", wardNumber: 14, lat1: 12.935, lng1: 77.575, lat2: 12.925, lng2: 77.59 },
+];
+
+const HOSPITALS = [
+  { name: "Manipal Hospital Old Airport Road", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.958, lng: 77.649, phone: "080-2502-4444", address: "Old Airport Road, Bengaluru" },
+  { name: "St. John's Medical College Hospital", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.936, lng: 77.626, phone: "080-2206-5000", address: "Sarjapur Road, Bengaluru" },
+  { name: "Columbia Asia Hospital Whitefield", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.969, lng: 77.749, phone: "080-6660-6666", address: "Whitefield, Bengaluru" },
+  { name: "Victoria Hospital", type: "GENERAL" as const, hasIcu: true, hasEmergency: true, lat: 12.959, lng: 77.573, phone: "080-2670-0810", address: "KR Market, Bengaluru" },
+  { name: "Bowring & Lady Curzon Hospital", type: "GENERAL" as const, hasIcu: false, hasEmergency: true, lat: 12.985, lng: 77.603, phone: "080-2559-1324", address: "Shivajinagar, Bengaluru" },
+  { name: "Narayana Health City", type: "TRAUMA" as const, hasIcu: true, hasEmergency: true, lat: 12.878, lng: 77.645, phone: "080-6755-6755", address: "Bommasandra, Bengaluru" },
+  { name: "Sakra World Hospital", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.931, lng: 77.667, phone: "080-4968-4968", address: "Marathahalli, Bengaluru" },
+  { name: "Apollo Hospitals Bannerghatta", type: "MULTISPECIALTY" as const, hasIcu: true, hasEmergency: true, lat: 12.896, lng: 77.598, phone: "080-2630-4050", address: "Bannerghatta Road, Bengaluru" },
+];
+
+const POTHOLE_IMAGES = [
+  "https://images.unsplash.com/photo-1589939705382-10e4937fd7f2?w=800",
+  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800",
+  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=800",
+  "https://images.unsplash.com/photo-1513828583688-c52646db42da?w=800",
+];
+
+const STREET_NAMES = [
+  "1st Cross", "2nd Main", "3rd Block", "Ring Road stretch", "Flyover approach",
+  "Market Road", "Bus stop junction", "Metro pillar zone", "School zone", "Hospital road",
+  "Service lane", "Underpass exit", "Bridge approach", "Layout entrance", "Industrial road",
+];
+
+const POTHOLE_TITLES = [
+  "Deep pothole causing traffic slowdown",
+  "Large pothole — vehicles swerving dangerously",
+  "Pothole cluster after recent rains",
+  "Sharp-edged pothole damaging two-wheelers",
+  "Water-filled pothole — hidden hazard",
+  "Pothole at speed breaker junction",
+  "Road crater near bus stop",
+  "Multiple potholes in 50m stretch",
+  "Pothole near school crossing",
+  "Severe road depression / pothole",
+];
+
+const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "MEDIUM", "HIGH", "HIGH", "CRITICAL"];
+const ACTIVE_STATUSES: IssueStatus[] = ["REPORTED", "REPORTED", "ACKNOWLEDGED", "IN_PROGRESS"];
+const OTHER_TYPES: Array<{ type: IssueType; severity: Severity; title: string }> = [
+  { type: "GARBAGE", severity: "HIGH", title: "Garbage pile blocking footpath" },
+  { type: "STREETLIGHT", severity: "MEDIUM", title: "Broken streetlight — dark stretch" },
+  { type: "WATERLOGGING", severity: "HIGH", title: "Waterlogging after rain" },
+  { type: "ROAD_DAMAGE", severity: "CRITICAL", title: "Road surface cracked badly" },
+  { type: "SEWAGE", severity: "HIGH", title: "Open sewage on road edge" },
+  { type: "FALLEN_TREE", severity: "CRITICAL", title: "Fallen tree blocking lane" },
+  { type: "TRAFFIC_SIGNAL", severity: "MEDIUM", title: "Traffic signal not working" },
+  { type: "WATER_LEAK", severity: "MEDIUM", title: "Water pipeline leak on road" },
+];
+
+/** Hotspot wards get extra pothole density */
+const HOTSPOT_WARDS = new Set([1, 8, 9, 10, 11, 12, 13]);
+
+function jitter(lat: number, lng: number, radiusKm = 0.045) {
+  const degLat = radiusKm / 111;
+  const degLng = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+  return {
+    lat: lat + (Math.random() - 0.5) * 2 * degLat,
+    lng: lng + (Math.random() - 0.5) * 2 * degLng,
+  };
+}
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomVotes(severity: Severity): number {
+  const base = severity === "CRITICAL" ? 8 : severity === "HIGH" ? 4 : 1;
+  return base + Math.floor(Math.random() * 20);
+}
+
 async function main() {
+  console.log("Clearing previous seed issues...");
+  await prisma.issueStatusHistory.deleteMany({
+    where: { issue: { title: { startsWith: SEED_PREFIX } } },
+  });
+  await prisma.issueDetection.deleteMany({
+    where: { issue: { title: { startsWith: SEED_PREFIX } } },
+  });
+  await prisma.issue.deleteMany({ where: { title: { startsWith: SEED_PREFIX } } });
+
+  const wardMap = new Map<number, string>();
+
   for (const ward of WARDS) {
-    await prisma.ward.upsert({
+    const w = await prisma.ward.upsert({
       where: { number: ward.number },
-      update: {},
+      update: { name: ward.name, zone: ward.zone, latitude: ward.latitude, longitude: ward.longitude },
       create: ward,
     });
+    wardMap.set(ward.number, w.id);
+  }
+
+  for (const road of ROADS) {
+    const wardId = wardMap.get(road.wardNumber);
+    const existing = await prisma.roadSegment.findFirst({ where: { name: road.name } });
+    if (!existing) {
+      await prisma.roadSegment.create({
+        data: {
+          name: road.name,
+          wardId,
+          latitudeStart: road.lat1,
+          longitudeStart: road.lng1,
+          latitudeEnd: road.lat2,
+          longitudeEnd: road.lng2,
+          healthScore: 100,
+        },
+      });
+    }
+  }
+
+  for (const h of HOSPITALS) {
+    const existing = await prisma.hospital.findFirst({ where: { name: h.name } });
+    if (!existing) {
+      await prisma.hospital.create({
+        data: {
+          name: h.name,
+          type: h.type,
+          hasIcu: h.hasIcu,
+          hasEmergency: h.hasEmergency,
+          phone: h.phone,
+          address: h.address,
+          latitude: h.lat,
+          longitude: h.lng,
+          open247: true,
+        },
+      });
+    }
   }
 
   const contractors = [
@@ -40,7 +184,124 @@ async function main() {
     if (!existing) await prisma.contractor.create({ data: c });
   }
 
-  console.log("Seed complete!");
+  let demoUser = await prisma.user.findFirst({ where: { email: "demo@nammamarga.in" } });
+  if (!demoUser) {
+    demoUser = await prisma.user.create({
+      data: {
+        name: "Demo Citizen",
+        email: "demo@nammamarga.in",
+        role: "CITIZEN",
+        reputation: 450,
+        wardId: wardMap.get(9),
+      },
+    });
+  }
+
+  const roads = await prisma.roadSegment.findMany();
+  const roadsByWard = new Map<string, string>();
+  for (const r of roads) {
+    if (r.wardId) roadsByWard.set(r.wardId, r.id);
+  }
+
+  let potholeCount = 0;
+  let otherCount = 0;
+
+  for (const ward of WARDS) {
+    const wardId = wardMap.get(ward.number)!;
+    const roadSegmentId = roadsByWard.get(wardId);
+    const baseCount = HOTSPOT_WARDS.has(ward.number) ? 14 : 9;
+    const count = baseCount + Math.floor(Math.random() * 6);
+
+    for (let i = 0; i < count; i++) {
+      const { lat, lng } = jitter(ward.latitude, ward.longitude, HOTSPOT_WARDS.has(ward.number) ? 0.055 : 0.04);
+      const severity = pick(SEVERITIES);
+      const status = pick(ACTIVE_STATUSES);
+      const street = pick(STREET_NAMES);
+      const title = `${SEED_PREFIX} ${pick(POTHOLE_TITLES)} — ${ward.name} ${street}`;
+      const createdAt = new Date(Date.now() - Math.random() * 21 * 24 * 60 * 60 * 1000);
+      const votes = randomVotes(severity);
+
+      await prisma.issue.create({
+        data: {
+          title,
+          description: `Citizen-reported pothole on ${street}, Ward ${ward.number} (${ward.name}). AI confidence 0.82.`,
+          type: "POTHOLE",
+          severity,
+          status,
+          confidence: 0.75 + Math.random() * 0.2,
+          imageUrl: pick(POTHOLE_IMAGES),
+          latitude: lat,
+          longitude: lng,
+          address: `${street}, ${ward.name}, Bengaluru`,
+          wardId,
+          roadSegmentId,
+          reporterId: demoUser.id,
+          voteCount: votes,
+          priorityScore: calculatePriorityScore({ severity, voteCount: votes, createdAt }),
+          createdAt,
+        },
+      });
+      potholeCount++;
+    }
+  }
+
+  for (const ward of WARDS) {
+    const wardId = wardMap.get(ward.number)!;
+    const roadSegmentId = roadsByWard.get(wardId);
+    const other = OTHER_TYPES[ward.number % OTHER_TYPES.length];
+    const { lat, lng } = jitter(ward.latitude, ward.longitude);
+    const createdAt = new Date(Date.now() - Math.random() * 14 * 24 * 60 * 60 * 1000);
+    const votes = randomVotes(other.severity);
+
+    await prisma.issue.create({
+      data: {
+        title: `${SEED_PREFIX} ${other.title} — ${ward.name}`,
+        description: `Additional civic issue for demo analytics.`,
+        type: other.type,
+        severity: other.severity,
+        status: pick(ACTIVE_STATUSES),
+        confidence: 0.8,
+        imageUrl: pick(POTHOLE_IMAGES),
+        latitude: lat,
+        longitude: lng,
+        address: `${ward.name}, Bengaluru`,
+        wardId,
+        roadSegmentId,
+        reporterId: demoUser.id,
+        voteCount: votes,
+        priorityScore: calculatePriorityScore({ severity: other.severity, voteCount: votes, createdAt }),
+        createdAt,
+      },
+    });
+    otherCount++;
+  }
+
+  for (const road of roads) {
+    const issues = await prisma.issue.findMany({
+      where: { roadSegmentId: road.id },
+      select: { severity: true, status: true, createdAt: true, resolvedAt: true },
+    });
+    if (issues.length) {
+      await prisma.roadSegment.update({
+        where: { id: road.id },
+        data: {
+          healthScore: calculateRoadHealthScore(issues),
+          lastScoredAt: new Date(),
+        },
+      });
+    }
+  }
+
+  const total = await prisma.issue.count({ where: { title: { startsWith: SEED_PREFIX } } });
+  const potholes = await prisma.issue.count({
+    where: { title: { startsWith: SEED_PREFIX }, type: "POTHOLE" },
+  });
+
+  console.log(`NammaMarga seed complete:`);
+  console.log(`  - ${potholeCount} potholes created (${potholes} total potholes in DB)`);
+  console.log(`  - ${otherCount} other civic issues`);
+  console.log(`  - ${total} total seed issues`);
+  console.log(`  - ${roads.length} road segments, ${HOSPITALS.length} hospitals`);
 }
 
 main()

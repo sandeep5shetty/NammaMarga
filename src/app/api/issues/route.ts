@@ -3,6 +3,7 @@ import {
   findDuplicateIssue,
   mergeIntoExistingIssue,
 } from "@/lib/issues/duplicate-detection";
+import { enrichAndCreateIssue } from "@/lib/issues/issue-lifecycle";
 import { notifyIssueUpdate } from "@/lib/notifications";
 import { db } from "@/lib/prisma";
 import { withRateLimit } from "@/lib/api/middleware-helpers";
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
     const status = searchParams.get("status");
     const type = searchParams.get("type");
     const reporterId = searchParams.get("reporterId");
-    const limit = Math.min(Number(searchParams.get("limit") ?? 50), 100);
+    const limit = Math.min(Number(searchParams.get("limit") ?? 50), 500);
 
     const issues = await db.issue.findMany({
       where: {
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
         ward: { select: { name: true, number: true } },
         reporter: { select: { name: true, image: true } },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ priorityScore: "desc" }, { createdAt: "desc" }],
       take: limit,
     });
 
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     const rateLimited = withRateLimit(request, user.id, 20);
     if (rateLimited) return rateLimited;
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
     const parsed = createIssueSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -96,12 +97,21 @@ export async function POST(request: Request) {
       });
     }
 
-    const issue = await db.issue.create({
-      data: {
-        ...parsed.data,
-        reporterId: user.id,
-      },
-      include: { ward: true },
+    const issue = await enrichAndCreateIssue({
+      ...parsed.data,
+      reporterId: user.id,
+      detection:
+        body.detection && typeof body.detection === "object"
+          ? {
+              modelProvider:
+                (body.detection as { modelProvider?: string }).modelProvider ?? "openai",
+              modelVersion: (body.detection as { modelVersion?: string }).modelVersion,
+              detectedCategory: parsed.data.type,
+              confidence: parsed.data.confidence,
+              severityHint: parsed.data.severity,
+              rawResponse: (body.detection as { rawResponse?: unknown }).rawResponse,
+            }
+          : undefined,
     });
 
     await db.activityLog.create({

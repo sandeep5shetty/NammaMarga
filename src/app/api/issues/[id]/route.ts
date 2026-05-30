@@ -1,4 +1,5 @@
 import { getAuthUser } from "@/lib/auth/get-user";
+import { recalculateRoadHealth } from "@/lib/issues/issue-lifecycle";
 import { notifyStatusChange } from "@/lib/notifications";
 import { db } from "@/lib/prisma";
 import { IssueStatus } from "@prisma/client";
@@ -34,6 +35,10 @@ export async function GET(
           orderBy: { createdAt: "desc" },
         },
         activityLogs: { orderBy: { createdAt: "desc" }, take: 20 },
+        detection: true,
+        votes: { include: { user: { select: { name: true } } } },
+        statusHistory: { orderBy: { createdAt: "desc" }, take: 10 },
+        roadSegment: { select: { name: true, healthScore: true } },
       },
     });
 
@@ -69,6 +74,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
+    const existing = await db.issue.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+    }
+
     const issue = await db.issue.update({
       where: { id },
       data: {
@@ -78,6 +88,19 @@ export async function PATCH(
     });
 
     if (parsed.data.status) {
+      await db.issueStatusHistory.create({
+        data: {
+          issueId: id,
+          changedByUserId: user.id,
+          fromStatus: existing.status,
+          toStatus: parsed.data.status,
+        },
+      });
+
+      if (existing.roadSegmentId) {
+        await recalculateRoadHealth(existing.roadSegmentId);
+      }
+
       await db.activityLog.create({
         data: {
           action: "STATUS_CHANGED",

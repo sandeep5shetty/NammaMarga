@@ -12,6 +12,18 @@ enum UserRole {
   AUTHORITY
   ADMIN
   CONTRACTOR
+  EMERGENCY_OPERATOR
+}
+
+enum VoteType {
+  UPVOTE
+  SEVERITY_CONFIRM
+}
+
+enum HospitalType {
+  GENERAL
+  MULTISPECIALTY
+  TRAUMA
 }
 
 enum IssueType {
@@ -19,6 +31,7 @@ enum IssueType {
   GARBAGE
   SEWAGE
   WATER_LEAK
+  WATERLOGGING
   STREETLIGHT
   ROAD_DAMAGE
   TRAFFIC_SIGNAL
@@ -85,6 +98,8 @@ model User {
   notifications  Notification[]
   activityLogs   ActivityLog[]
   watchlists     Watchlist[]
+  issueVotes     IssueVote[]
+  statusChanges  IssueStatusHistory[] @relation("StatusChanger")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -100,9 +115,30 @@ model Ward {
   zone      String
   latitude  Float
   longitude Float
-  users     User[]
-  issues    Issue[]
-  createdAt DateTime @default(now())
+  users        User[]
+  issues       Issue[]
+  roadSegments RoadSegment[]
+  createdAt    DateTime @default(now())
+}
+
+model RoadSegment {
+  id             String    @id @default(cuid())
+  name           String
+  wardId         String?
+  ward           Ward?     @relation(fields: [wardId], references: [id])
+  roadClass      String    @default("primary")
+  latitudeStart  Float
+  longitudeStart Float
+  latitudeEnd    Float
+  longitudeEnd   Float
+  healthScore    Int       @default(100)
+  lastScoredAt   DateTime?
+  issues         Issue[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([wardId])
+  @@index([healthScore])
 }
 
 model Issue {
@@ -111,9 +147,11 @@ model Issue {
   description String?
   type        IssueType
   status      IssueStatus @default(REPORTED)
-  severity    Severity    @default(MEDIUM)
-  confidence  Float       @default(0)
-  aiSummary   String?
+  severity       Severity @default(MEDIUM)
+  confidence     Float    @default(0)
+  aiSummary      String?
+  priorityScore  Float    @default(0)
+  voteCount      Int      @default(0)
 
   imageUrl    String
   afterImageUrl String?
@@ -122,8 +160,10 @@ model Issue {
   longitude Float
   address   String?
 
-  wardId String?
-  ward   Ward?   @relation(fields: [wardId], references: [id])
+  wardId        String?
+  ward          Ward?         @relation(fields: [wardId], references: [id])
+  roadSegmentId String?
+  roadSegment   RoadSegment?  @relation(fields: [roadSegmentId], references: [id])
 
   reporterId String
   reporter   User   @relation("ReportedIssues", fields: [reporterId], references: [id])
@@ -143,9 +183,12 @@ model Issue {
 
   reportCount Int @default(1)
 
-  verifications Verification[]
-  comments      Comment[]
-  activityLogs  ActivityLog[]
+  verifications  Verification[]
+  comments       Comment[]
+  activityLogs   ActivityLog[]
+  detection      IssueDetection?
+  votes          IssueVote[]
+  statusHistory  IssueStatusHistory[]
 
   resolvedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -157,6 +200,86 @@ model Issue {
   @@index([wardId])
   @@index([latitude, longitude])
   @@index([reporterId])
+  @@index([createdAt])
+  @@index([priorityScore])
+  @@index([roadSegmentId])
+  @@index([wardId, status, priorityScore])
+}
+
+model IssueDetection {
+  id               String    @id @default(cuid())
+  issueId          String    @unique
+  issue            Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  modelProvider    String
+  modelVersion     String?
+  detectedCategory IssueType
+  confidence       Float
+  severityHint     Severity?
+  rawResponse      Json?
+  createdAt        DateTime  @default(now())
+
+  @@index([detectedCategory])
+}
+
+model IssueVote {
+  id                   String    @id @default(cuid())
+  issueId              String
+  issue                Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voteType             VoteType  @default(UPVOTE)
+  severityConfirmation Severity?
+  createdAt            DateTime  @default(now())
+
+  @@unique([issueId, userId])
+  @@index([issueId])
+}
+
+model IssueStatusHistory {
+  id              String       @id @default(cuid())
+  issueId         String
+  issue           Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  changedByUserId String?
+  changedBy       User?        @relation("StatusChanger", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  fromStatus      IssueStatus?
+  toStatus        IssueStatus
+  note            String?
+  createdAt       DateTime     @default(now())
+
+  @@index([issueId])
+  @@index([createdAt])
+}
+
+model Hospital {
+  id           String       @id @default(cuid())
+  name         String
+  type         HospitalType @default(GENERAL)
+  hasIcu       Boolean      @default(false)
+  hasEmergency Boolean      @default(true)
+  phone        String?
+  address      String?
+  latitude     Float
+  longitude    Float
+  open247      Boolean      @default(true)
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  @@index([hasIcu])
+  @@index([hasEmergency])
+  @@index([latitude, longitude])
+}
+
+model RouteRequest {
+  id               String   @id @default(cuid())
+  requestedByUserId String?
+  sourceLat        Float
+  sourceLng        Float
+  destLat          Float
+  destLng          Float
+  selectedRouteType String?
+  result           Json?
+  createdAt        DateTime @default(now())
+
   @@index([createdAt])
 }
 

@@ -9,16 +9,35 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { ThumbsUp } from "lucide-react";
 
 export default function ReportDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [issue, setIssue] = useState<Record<string, unknown> | null>(null);
+  const [voting, setVoting] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     fetch(`/api/issues/${id}`)
       .then((r) => r.json())
       .then((json) => setIssue(json.data));
-  }, [id]);
+  };
+
+  useEffect(load, [id]);
+
+  const handleUpvote = async () => {
+    setVoting(true);
+    try {
+      const res = await fetch(`/api/issues/${id}/vote`, { method: "POST" });
+      if (!res.ok) throw new Error("Vote failed");
+      toast.success("Upvoted — priority increased");
+      load();
+    } catch {
+      toast.error("Could not upvote");
+    } finally {
+      setVoting(false);
+    }
+  };
 
   if (!issue) return <p className="text-muted-foreground">Loading...</p>;
 
@@ -36,11 +55,30 @@ export default function ReportDetailPage() {
 
       <div>
         <h1 className="text-2xl font-bold">{issue.title as string}</h1>
-        <div className="flex flex-wrap gap-2 mt-2">
+        <div className="flex flex-wrap gap-2 mt-2 items-center">
           <Badge>{ISSUE_TYPE_LABELS[issue.type as keyof typeof ISSUE_TYPE_LABELS]}</Badge>
           <Badge variant="outline">{STATUS_LABELS[issue.status as keyof typeof STATUS_LABELS]}</Badge>
           <Badge variant="secondary">{issue.severity as string}</Badge>
+          {typeof issue.priorityScore === "number" && (
+            <Badge variant="destructive">Priority {Math.round(issue.priorityScore)}</Badge>
+          )}
+          {typeof issue.voteCount === "number" && (
+            <Badge variant="outline">{issue.voteCount} upvotes</Badge>
+          )}
         </div>
+        <Button variant="outline" size="sm" className="mt-3" onClick={handleUpvote} disabled={voting}>
+          <ThumbsUp className="h-4 w-4 mr-1" />
+          Upvote this issue
+        </Button>
+        {(() => {
+          const road = issue.roadSegment as { name?: string; healthScore?: number } | null;
+          if (!road?.name) return null;
+          return (
+            <p className="text-sm text-muted-foreground mt-2">
+              Road: {road.name} · Health {road.healthScore ?? "—"}/100
+            </p>
+          );
+        })()}
         <p className="text-muted-foreground mt-4">{issue.description as string}</p>
         <p className="text-sm text-muted-foreground mt-2">
           Reported {formatDistanceToNow(new Date(issue.createdAt as string), { addSuffix: true })}

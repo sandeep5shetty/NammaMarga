@@ -29,31 +29,37 @@ interface IssueRow {
   type: IssueType;
   status: IssueStatus;
   severity: Severity;
+  priorityScore: number;
+  voteCount: number;
   createdAt: string;
   ward?: { name: string; number: number } | null;
 }
 
 export default function BbmpIssuesPage() {
   const [issues, setIssues] = useState<IssueRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [wardRankings, setWardRankings] = useState<
+    Array<{ wardName: string; activeIssues: number }>
+  >([]);
 
   const load = () => {
-    const params = statusFilter !== "all" ? `?status=${statusFilter}` : "";
-    fetch(`/api/issues${params}`)
+    fetch("/api/bbmp/ward-queue")
       .then((r) => r.json())
-      .then((j) => setIssues(j.data ?? []));
+      .then((j) => {
+        setIssues(j.data?.queue ?? []);
+        setWardRankings(j.data?.wardRankings ?? []);
+      });
   };
 
-  useEffect(load, [statusFilter]);
+  useEffect(load, []);
 
   const updateStatus = async (id: string, status: IssueStatus) => {
-    const res = await fetch(`/api/issues/${id}`, {
+    const res = await fetch(`/api/issues/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
     if (res.ok) {
-      toast.success(`Status updated to ${status}`);
+      toast.success(`Status updated to ${STATUS_LABELS[status]}`);
       load();
     } else {
       toast.error("Failed to update");
@@ -62,28 +68,32 @@ export default function BbmpIssuesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold font-heading">Issue Management</h1>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Filter status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div>
+        <h1 className="text-2xl font-bold font-heading">Priority Issue Queue</h1>
+        <p className="text-muted-foreground mt-1">
+          Ward-wise complaints sorted by smart priority scoring
+        </p>
       </div>
+
+      {wardRankings.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {wardRankings.slice(0, 5).map((w) => (
+            <Badge key={w.wardName} variant="outline">
+              {w.wardName}: {w.activeIssues} active
+            </Badge>
+          ))}
+        </div>
+      )}
 
       <div className="rounded-xl border border-border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Priority</TableHead>
               <TableHead>Issue</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Severity</TableHead>
+              <TableHead>Votes</TableHead>
               <TableHead>Ward</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Reported</TableHead>
@@ -93,6 +103,11 @@ export default function BbmpIssuesPage() {
           <TableBody>
             {issues.map((issue) => (
               <TableRow key={issue.id}>
+                <TableCell>
+                  <Badge variant={issue.priorityScore > 80 ? "destructive" : "secondary"}>
+                    {Math.round(issue.priorityScore)}
+                  </Badge>
+                </TableCell>
                 <TableCell className="font-medium max-w-[200px] truncate">{issue.title}</TableCell>
                 <TableCell>{ISSUE_TYPE_LABELS[issue.type]}</TableCell>
                 <TableCell>
@@ -100,6 +115,7 @@ export default function BbmpIssuesPage() {
                     {issue.severity}
                   </Badge>
                 </TableCell>
+                <TableCell>{issue.voteCount}</TableCell>
                 <TableCell>
                   {issue.ward ? `${issue.ward.number} — ${issue.ward.name}` : "—"}
                 </TableCell>
@@ -108,13 +124,13 @@ export default function BbmpIssuesPage() {
                   {formatDistanceToNow(new Date(issue.createdAt), { addSuffix: true })}
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
                     {issue.status === "REPORTED" && (
                       <Button size="sm" variant="outline" onClick={() => updateStatus(issue.id, "ACKNOWLEDGED")}>
                         Ack
                       </Button>
                     )}
-                    {["ACKNOWLEDGED", "IN_PROGRESS"].includes(issue.status) && (
+                    {["ACKNOWLEDGED", "REPORTED"].includes(issue.status) && (
                       <Button size="sm" variant="outline" onClick={() => updateStatus(issue.id, "IN_PROGRESS")}>
                         Work
                       </Button>
