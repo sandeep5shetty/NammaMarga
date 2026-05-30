@@ -1,27 +1,32 @@
-import React from 'react'
-import { Icons } from "@/components";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { cn } from "@/utils";
 
 interface Props {
-    variant?: "icon" | "text" | "full";
-    className?: string;
+  variant?: "icon" | "text" | "full";
+  className?: string;
+  href?: string;
 }
 
-const Logo = ({ variant = "icon", className }: Props) => {
+const Logo = ({ variant = "icon", className, href = "/" }: Props) => {
+  if (variant === "icon") {
     return (
-        <>
-            {variant === "icon" ? (
-                <Icons.logo className={cn("w-8 h-8 transition-all", className)} />
-            ) : variant === "text" ? (
-                <Icons.wordmark className={cn("w-auto h-5 transition-all", className)} />
-            ) : (
-                <div className={cn("w-auto h-8 flex items-center space-x-2 transition-all", className)}>
-                    <Icons.logo className="w-8 h-8 transition-all" />
-                    <Icons.wordmark className="w-auto h-5 transition-all" />
-                </div>
-            )}
-        </>
-    )
+      <BrandLogo
+        href={href}
+        showWordmark={false}
+        size="md"
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <BrandLogo
+      href={href}
+      showWordmark={variant === "full" || variant === "text"}
+      size="md"
+      className={cn(className)}
+    />
+  );
 };
 
-export default Logo
+export default Logo;

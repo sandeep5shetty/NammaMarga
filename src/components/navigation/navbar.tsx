@@ -19,7 +19,7 @@ import React, { useEffect, useState } from 'react';
 import MaxWidthWrapper from "../global/max-width-wrapper";
 import MobileNavbar from "./mobile-navbar";
 import AnimationContainer from "../global/animation-container";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 const Navbar = () => {
 
@@ -52,13 +52,7 @@ const Navbar = () => {
             <AnimationContainer reverse delay={0.1} className="size-full">
                 <MaxWidthWrapper className="flex items-center justify-between">
                     <div className="flex items-center space-x-12">
-                        <Link href="/#home" className="flex items-center space-x-2"
-                        >
-                            <Image src="/assets/logo-new.png" alt="NammaMarg" width={100} height={100} className="w-10 h-10 rounded-xl" />
-                            <span className="text-lg font-bold font-heading !leading-none pt-2">
-                                NammaMarg
-                            </span>
-                        </Link>
+                        <BrandLogo href="/#home" size="md" className="!gap-2" />
 
                         <NavigationMenu className="hidden lg:flex">
                             <NavigationMenuList>

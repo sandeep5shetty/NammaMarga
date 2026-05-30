@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand/brand-logo";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/utils";
@@ -25,10 +26,13 @@ export function BbmpSidebar() {
   return (
     <aside className="hidden md:flex w-64 flex-col border-r border-border bg-muted/10 min-h-screen">
       <div className="p-4 border-b border-border">
-        <Link href="/bbmp" className="text-lg font-bold font-heading text-amber-500">
-          BBMP Console
-        </Link>
-        <p className="text-xs text-muted-foreground mt-1">Authority Dashboard</p>
+        <BrandLogo
+          href="/bbmp"
+          wordmark="BBMP Console"
+          subtitle="Authority dashboard"
+          size="sm"
+          wordmarkClassName="text-amber-600 dark:text-amber-500"
+        />
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {links.map(({ href, label, icon: Icon }) => (

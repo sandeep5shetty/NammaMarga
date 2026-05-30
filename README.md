@@ -1,6 +1,6 @@
-# NammaMarg — AI-Powered Civic Road Intelligence
+# NammaMarga — AI-Powered Civic Road Intelligence
 
-NammaMarg helps Bengaluru citizens report potholes and civic issues, enables BBMP to prioritize ward queues, and provides pothole-aware emergency green corridor routing.
+NammaMarga helps Bengaluru citizens report potholes and civic issues, enables BBMP to prioritize ward queues, and provides pothole-aware emergency green corridor routing.
 
 ## Features
 

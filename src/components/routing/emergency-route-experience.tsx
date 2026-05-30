@@ -5,13 +5,20 @@ import {
   type EmergencyWizardResult,
 } from "@/components/routing/emergency-route-wizard";
 import { EmergencyRouteMap } from "@/components/routing/emergency-route-map";
+import { HealthcareStopsPanel } from "@/components/routing/healthcare-stops-panel";
 import { RouteComparisonPanel } from "@/components/routing/route-comparison-panel";
+import { filterFacilitiesForRoute } from "@/lib/hospitals/along-route";
+import {
+  countNearbyPotholesForRoute,
+  NEARBY_POTHOLE_RADIUS_KM,
+} from "@/lib/routing/nearby-route-potholes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { FACILITY_KIND_LABELS } from "@/types/emergency";
+import { cn } from "@/utils";
 import { Ambulance, MapPin, RotateCcw, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -23,13 +30,22 @@ type EmergencyRouteExperienceProps = {
 export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteExperienceProps) {
   const [wizardOpen, setWizardOpen] = useState(variant === "public");
   const [result, setResult] = useState<EmergencyWizardResult | null>(null);
-  const [showPotholesOnly, setShowPotholesOnly] = useState(false);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showNearbyPotholes, setShowNearbyPotholes] = useState(true);
+  const [showHealthcare, setShowHealthcare] = useState(true);
   const [focusRouteId, setFocusRouteId] = useState<string | null>(null);
+  const [highlightFacilityId, setHighlightFacilityId] = useState<string | null>(null);
 
   const activeRouteId = focusRouteId ?? result?.recommended.id ?? null;
   const activeRoute =
     result?.routes.find((r) => r.id === activeRouteId) ?? result?.recommended ?? null;
+  const routeHealthcareStops = result
+    ? filterFacilitiesForRoute(result.alongRouteFacilities, activeRouteId)
+    : [];
+
+  const nearbyPotholeCount =
+    result && activeRoute
+      ? countNearbyPotholesForRoute(result.hazards, activeRoute)
+      : 0;
 
   useEffect(() => {
     if (variant === "app") setWizardOpen(true);
@@ -51,7 +67,7 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
             </span>
           </h1>
           <p className="mt-3 text-muted-foreground max-w-xl mx-auto text-balance">
-            Find the safest ambulance route to hospitals and first-aid centres — scored against
+            Find the safest route to hospitals and first-aid centres - scored against
             live potholes from NammaMarga civic data.
           </p>
           {!wizardOpen && !result && (
@@ -109,8 +125,8 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
       )}
 
       {result && (
-        <div className={isPublic ? "mt-8 space-y-6" : "space-y-6"}>
-          <Card className="border-green-500/30">
+        <div className={cn(isPublic ? "mt-6 space-y-6" : "space-y-6")}>
+          <Card className="border-green-500/30 shadow-lg">
             <CardHeader className="pb-2">
               <div className="flex flex-wrap gap-2">
                 <Badge className="bg-green-600 text-white border-0">Green corridor active</Badge>
@@ -121,59 +137,74 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
               </CardTitle>
               <CardDescription>
                 {activeRoute
-                  ? `${activeRoute.distanceKm.toFixed(1)} km · ~${Math.round(activeRoute.durationMinutes)} min · Safety ${activeRoute.safetyScore}/100`
+                  ? `${activeRoute.distanceKm.toFixed(1)} km · ~${Math.round(activeRoute.durationMinutes)} min · Safety ${activeRoute.safetyScore}/100 · ${nearbyPotholeCount} pothole${nearbyPotholeCount !== 1 ? "s" : ""} within ${NEARBY_POTHOLE_RADIUS_KM} km`
                   : null}
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-4">
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-4">
               <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" />
                 Plan another route
               </Button>
               <div className="flex items-center gap-2">
                 <Switch
-                  id="potholes-page"
-                  checked={showPotholesOnly}
-                  onCheckedChange={setShowPotholesOnly}
+                  id="nearby-potholes-page"
+                  checked={showNearbyPotholes}
+                  onCheckedChange={setShowNearbyPotholes}
                 />
-                <Label htmlFor="potholes-page" className="text-xs">
-                  Potholes only
+                <Label htmlFor="nearby-potholes-page" className="text-xs">
+                  Nearby potholes ({NEARBY_POTHOLE_RADIUS_KM} km)
                 </Label>
               </div>
               <div className="flex items-center gap-2">
-                <Switch id="heat-page" checked={showHeatmap} onCheckedChange={setShowHeatmap} />
-                <Label htmlFor="heat-page" className="text-xs">
-                  Heatmap
+                <Switch
+                  id="health-page"
+                  checked={showHealthcare}
+                  onCheckedChange={setShowHealthcare}
+                />
+                <Label htmlFor="health-page" className="text-xs">
+                  Healthcare stops
                 </Label>
+              </div>
               </div>
             </CardContent>
           </Card>
 
-          <EmergencyRouteMap
-            className="h-[min(480px,60vh)]"
-            routes={result.routes}
-            hazards={result.hazards}
-            alongRouteFacilities={result.alongRouteFacilities}
-            source={{ ...result.source, placeName: result.source.placeName }}
-            destination={{
-              latitude: result.facility.latitude,
-              longitude: result.facility.longitude,
-              placeName: result.facility.name,
-            }}
-            focusRouteId={activeRouteId}
-            onSelectRoute={setFocusRouteId}
-            showPotholesOnly={showPotholesOnly}
-            showHeatmap={showHeatmap}
-            comparisonMode
-          />
+          <div className="grid gap-4 lg:grid-cols-[1fr_min(320px,100%)] lg:items-stretch">
+            <EmergencyRouteMap
+              className="h-[min(480px,60vh)]"
+              routes={result.routes}
+              hazards={result.hazards}
+              alongRouteFacilities={result.alongRouteFacilities}
+              source={{ ...result.source, placeName: result.source.placeName }}
+              destination={{
+                latitude: result.facility.latitude,
+                longitude: result.facility.longitude,
+                placeName: result.facility.name,
+              }}
+              focusRouteId={activeRouteId}
+              onSelectRoute={(id) => {
+                setFocusRouteId(id);
+                setHighlightFacilityId(null);
+              }}
+              showNearbyPotholes={showNearbyPotholes}
+              showHealthcareStops={showHealthcare}
+              highlightFacilityId={highlightFacilityId}
+              onFacilitySelect={(f) => setHighlightFacilityId(f.id)}
+              comparisonMode
+            />
 
-          {result.alongRouteFacilities.length > 0 && activeRouteId && (
-            <p className="text-sm text-muted-foreground">
-              {result.alongRouteFacilities.filter((f) => f.routeIds.includes(activeRouteId)).length}{" "}
-              healthcare facilities on this route — blood banks, pharmacies, ICU step-down, and
-              more.
-            </p>
-          )}
+            {showHealthcare && (
+              <HealthcareStopsPanel
+                fillHeight
+                className="h-[min(480px,60vh)]"
+                facilities={routeHealthcareStops}
+                selectedId={highlightFacilityId}
+                onSelect={(f) => setHighlightFacilityId(f.id)}
+              />
+            )}
+          </div>
 
           {result.routes.length > 1 && activeRoute && (
             <RouteComparisonPanel
@@ -181,6 +212,18 @@ export function EmergencyRouteExperience({ variant = "public" }: EmergencyRouteE
               recommended={result.recommended}
               selectedRouteId={activeRouteId}
               onSelectRoute={(r) => setFocusRouteId(r.id)}
+              navigation={{
+                origin: {
+                  latitude: result.source.latitude,
+                  longitude: result.source.longitude,
+                  label: result.source.placeName ?? result.source.name,
+                },
+                destination: {
+                  latitude: result.facility.latitude,
+                  longitude: result.facility.longitude,
+                  label: result.facility.name,
+                },
+              }}
             />
           )}
         </div>

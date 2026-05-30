@@ -1,26 +1,13 @@
 import { Metadata } from "next";
 
 export const generateMetadata = ({
-  title = `${process.env.NEXT_PUBLIC_APP_NAME ?? "NammaMarg"} - AI-Powered Civic Infrastructure for Bangalore`,
-  description = `${process.env.NEXT_PUBLIC_APP_NAME ?? "NammaMarg"} helps citizens report civic issues, BBMP track resolution, and communities verify fixes — powered by AI.`,
+  title = `${process.env.NEXT_PUBLIC_APP_NAME ?? "NammaMarga"} - AI-Powered Civic Infrastructure for Bangalore`,
+  description = `${process.env.NEXT_PUBLIC_APP_NAME ?? "NammaMarga"} helps citizens report civic issues, BBMP track resolution, and communities verify fixes — powered by AI.`,
   image = "/thumbnail.png",
-  icons = [
-    {
-      rel: "apple-touch-icon",
-      sizes: "32x32",
-      url: "/apple-touch-icon.png",
-    },
-    {
-      rel: "icon",
-      sizes: "32x32",
-      url: "/favicon-32x32.png",
-    },
-    {
-      rel: "icon",
-      sizes: "16x16",
-      url: "/favicon-16x16.png",
-    },
-  ],
+  icons = {
+    icon: [{ url: "/favicon.png", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   noIndex = false,
 }: {
   title?: string;

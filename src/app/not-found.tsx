@@ -20,7 +20,7 @@ const NotFound = () => {
                     <p className="text-base text-neutral-400 font-medium mt-5 text-center mx-auto max-w-xl">
                         The page you are looking for does not exist. <br /> But don&apos;t worry, we&apos;ve got you covered. You can{" "}
                         <Link href="/resources/help" className="text-foreground">
-                            contact us
+                            view BBMP contact details
                         </Link>
                         .
                     </p>

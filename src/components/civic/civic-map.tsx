@@ -1,5 +1,6 @@
 "use client";
 
+import { IssueUpvoteButton } from "@/components/civic/issue-upvote-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +20,6 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ISSUE_TYPE_LABELS, SEVERITY_COLORS, STATUS_LABELS } from "@/types/civic";
 import type { IssueType, Severity } from "@prisma/client";
-import { healthScoreColor } from "@/lib/scoring/road-health";
 import { cn } from "@/utils";
 import {
   AlertTriangle,
@@ -47,6 +47,7 @@ export interface MapIssue {
   longitude: number;
   priorityScore?: number;
   voteCount?: number;
+  reportCount?: number;
   wardId?: string | null;
   ward?: { name: string; number: number } | null;
 }
@@ -71,7 +72,7 @@ function buildPopupHtml(issue: MapIssue, isLight: boolean) {
       <p class="civic-popup-meta">${ISSUE_TYPE_LABELS[issue.type]} · ${STATUS_LABELS[issue.status as keyof typeof STATUS_LABELS] ?? issue.status}</p>
       <div class="civic-popup-badges">
         <span class="civic-popup-severity" style="background:${SEVERITY_COLORS[issue.severity]}">${issue.severity}</span>
-        ${issue.voteCount ? `<span class="civic-popup-votes" style="color:${muted}">${issue.voteCount} upvotes</span>` : ""}
+        ${issue.voteCount || issue.reportCount ? `<span class="civic-popup-votes" style="color:${muted}">${Math.max(issue.voteCount ?? 0, issue.reportCount ?? 0)} confirmations</span>` : ""}
       </div>
       <a href="/dashboard/reports/${issue.id}" class="civic-popup-link">View full report →</a>
     </div>
@@ -99,12 +100,8 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIssue, setSelectedIssue] = useState<MapIssue | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
-  const [showRoadHealth, setShowRoadHealth] = useState(true);
   const [showClusters, setShowClusters] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"filters" | "list">("filters");
-  const [roadSegments, setRoadSegments] = useState<
-    Array<{ id: string; name: string; healthScore: number; coordinates: [number, number][] }>
-  >([]);
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const isLight = mounted && resolvedTheme === "light";
@@ -116,19 +113,13 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [issuesRes, wardsRes, roadsRes] = await Promise.all([
+      const [issuesRes, wardsRes] = await Promise.all([
         fetch("/api/issues?limit=500"),
         fetch("/api/wards"),
-        fetch("/api/road-health"),
       ]);
-      const [issuesJson, wardsJson, roadsJson] = await Promise.all([
-        issuesRes.json(),
-        wardsRes.json(),
-        roadsRes.json(),
-      ]);
+      const [issuesJson, wardsJson] = await Promise.all([issuesRes.json(), wardsRes.json()]);
       setIssues(issuesJson.data ?? []);
       setWards(wardsJson.data ?? []);
-      setRoadSegments(roadsJson.data?.segments ?? []);
     } finally {
       setLoading(false);
     }
@@ -187,19 +178,6 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
         })),
       };
 
-      const roadGeojson: GeoJSON.FeatureCollection = {
-        type: "FeatureCollection",
-        features: roadSegments.map((r) => ({
-          type: "Feature",
-          properties: {
-            name: r.name,
-            healthScore: r.healthScore,
-            color: healthScoreColor(r.healthScore),
-          },
-          geometry: { type: "LineString", coordinates: r.coordinates },
-        })),
-      };
-
       const removeLayer = (id: string) => {
         if (map.getLayer(id)) map.removeLayer(id);
       };
@@ -207,23 +185,8 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
         if (map.getSource(id)) map.removeSource(id);
       };
 
-      ["road-health", "road-health-label", "issue-heatmap", "clusters", "cluster-count", "unclustered-point", "critical-pulse"].forEach(removeLayer);
-      ["roads", "issues"].forEach(removeSource);
-
-      if (roadSegments.length) {
-        map.addSource("roads", { type: "geojson", data: roadGeojson });
-        map.addLayer({
-          id: "road-health",
-          type: "line",
-          source: "roads",
-          layout: { visibility: showRoadHealth ? "visible" : "none" },
-          paint: {
-            "line-color": ["get", "color"],
-            "line-width": 6,
-            "line-opacity": 0.9,
-          },
-        });
-      }
+      ["issue-heatmap", "clusters", "cluster-count", "unclustered-point", "critical-pulse"].forEach(removeLayer);
+      ["issues"].forEach(removeSource);
 
       map.addSource("issues", {
         type: "geojson",
@@ -327,7 +290,7 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
 
       layersReadyRef.current = true;
     },
-    [roadSegments, showHeatmap, showRoadHealth, showClusters, strokeColor, isLight],
+    [showHeatmap, showClusters, strokeColor, isLight],
   );
 
   const bindMapEvents = useCallback((map: mapboxgl.Map) => {
@@ -437,7 +400,7 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
     const run = () => setupLayers(map);
     if (map.isStyleLoaded()) run();
     else map.once("style.load", run);
-  }, [filtered, showHeatmap, showRoadHealth, showClusters, setupLayers]);
+  }, [filtered, showHeatmap, showClusters, setupLayers]);
 
   const flyToIssue = (issue: MapIssue) => {
     setSelectedIssue(issue);
@@ -617,7 +580,6 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
                   {[
                     { id: "heatmap", label: "Density heatmap", desc: "Hotspots of complaints", checked: showHeatmap, onChange: setShowHeatmap },
                     { id: "clusters", label: "Cluster markers", desc: "Group nearby issues", checked: showClusters, onChange: setShowClusters },
-                    { id: "roads", label: "Road health", desc: "Green = healthy, red = damaged", checked: showRoadHealth, onChange: setShowRoadHealth },
                   ].map((layer) => (
                     <div key={layer.id} className="flex items-start justify-between gap-2 rounded-lg border border-border/60 p-2.5">
                       <div>
@@ -649,44 +611,61 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
                   {filtered.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-8">No issues match filters</p>
                   )}
-                  {filtered.map((issue) => (
-                    <button
-                      key={issue.id}
-                      type="button"
-                      onClick={() => flyToIssue(issue)}
-                      className={cn(
-                        "w-full text-left rounded-lg border p-3 transition-colors hover:bg-muted/60",
-                        selectedIssue?.id === issue.id && "border-primary bg-primary/5",
-                      )}
-                    >
-                      <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        <Badge variant="outline" className="text-[10px] h-5">
-                          {ISSUE_TYPE_LABELS[issue.type]}
-                        </Badge>
-                        <Badge
-                          className="text-[10px] h-5 text-white border-0"
-                          style={{ backgroundColor: SEVERITY_COLORS[issue.severity] }}
+                  {filtered.map((issue) => {
+                    const confirmations = Math.max(
+                      issue.voteCount ?? 0,
+                      issue.reportCount ?? 0,
+                    );
+                    return (
+                      <div
+                        key={issue.id}
+                        className={cn(
+                          "rounded-lg border transition-colors hover:bg-muted/40",
+                          selectedIssue?.id === issue.id && "border-primary bg-primary/5",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => flyToIssue(issue)}
+                          className="w-full text-left p-3 pb-2"
                         >
-                          {issue.severity}
-                        </Badge>
+                          <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            <Badge variant="outline" className="text-[10px] h-5">
+                              {ISSUE_TYPE_LABELS[issue.type]}
+                            </Badge>
+                            <Badge
+                              className="text-[10px] h-5 text-white border-0"
+                              style={{ backgroundColor: SEVERITY_COLORS[issue.severity] }}
+                            >
+                              {issue.severity}
+                            </Badge>
+                          </div>
+                          {issue.ward && (
+                            <p className="text-[10px] text-muted-foreground mt-1.5">
+                              Ward {issue.ward.number} · {issue.ward.name}
+                            </p>
+                          )}
+                        </button>
+                        <div className="px-3 pb-3 pt-0">
+                          <IssueUpvoteButton
+                            issueId={issue.id}
+                            initialCount={confirmations}
+                            className="w-full justify-center h-8"
+                          />
+                        </div>
                       </div>
-                      {issue.ward && (
-                        <p className="text-[10px] text-muted-foreground mt-1.5">
-                          Ward {issue.ward.number} · {issue.ward.name}
-                        </p>
-                      )}
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </ScrollArea>
             )}
 
             {selectedIssue && sidebarTab === "filters" && (
-              <Card className="border-primary/30 bg-primary/5 p-3">
+              <Card className="border-primary/30 bg-primary/5 p-3 space-y-2">
                 <p className="text-xs text-muted-foreground mb-1">Selected</p>
                 <p className="text-sm font-medium line-clamp-2">{selectedIssue.title}</p>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2">
                   <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => flyToIssue(selectedIssue)}>
                     <Crosshair className="h-3 w-3 mr-1" />
                     Zoom
@@ -695,6 +674,14 @@ export function CivicMap({ embedded = false }: { embedded?: boolean }) {
                     <Link href={`/dashboard/reports/${selectedIssue.id}`}>Details</Link>
                   </Button>
                 </div>
+                <IssueUpvoteButton
+                  issueId={selectedIssue.id}
+                  initialCount={Math.max(
+                    selectedIssue.voteCount ?? 0,
+                    selectedIssue.reportCount ?? 0,
+                  )}
+                  className="w-full justify-center h-8"
+                />
               </Card>
             )}
           </CardContent>

@@ -13,6 +13,7 @@ import {
     SheetContent,
     SheetTrigger
 } from "@/components/ui/sheet";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { cn, NAV_LINKS } from "@/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useUser } from "@/hooks/use-user";
@@ -54,6 +55,9 @@ const MobileNavbar = () => {
                         </Button>
                     </SheetClose>
                     <div className="flex flex-col items-start w-full py-2 mt-10">
+                        <div className="mb-6" onClick={handleClose}>
+                          <BrandLogo href="/#home" size="sm" />
+                        </div>
                         <Link
                             href="/emergency-route"
                             onClick={handleClose}

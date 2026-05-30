@@ -37,10 +37,10 @@ enum HealthFacilityKind {
 }
 
 enum EmergencyVehicleType {
-  AMBULANCE
-  FIRE_ENGINE
-  PRIVATE_CAR
-  TWO_WHEELER
+  AMBULANCE_BLS
+  AMBULANCE_ALS
+  AMBULANCE_ICU
+  AMBULANCE_NEONATAL
 }
 
 enum IssueType {
@@ -221,6 +221,7 @@ model Issue {
   @@index([priorityScore])
   @@index([roadSegmentId])
   @@index([wardId, status, priorityScore])
+  @@index([type, status, duplicateOfId, createdAt])
 }
 
 model IssueDetection {

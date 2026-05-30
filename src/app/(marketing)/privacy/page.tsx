@@ -10,7 +10,7 @@ const PrivacyPage = () => {
           <p className="text-muted-foreground text-sm">Last updated: {new Date().toLocaleDateString("en-IN")}</p>
 
           <p className="text-muted-foreground leading-relaxed mt-6">
-            At <strong>NammaMarg</strong>, we respect your privacy. This policy describes how we collect,
+            At <strong>NammaMarga</strong>, we respect your privacy. This policy describes how we collect,
             use, and protect information when you use our civic road intelligence platform for
             Bengaluru.
           </p>
@@ -54,7 +54,7 @@ const PrivacyPage = () => {
           <p className="text-muted-foreground">
             Questions about this policy? Reach out via our{" "}
             <Link href="/resources/help" className="underline">
-              help center
+              BBMP contact page
             </Link>
             .
           </p>

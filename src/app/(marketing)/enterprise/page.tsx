@@ -10,7 +10,7 @@ const EnterprisePage = () => {
           Municipal &amp; enterprise
         </h1>
         <p className="text-base md:text-lg mt-6 text-muted-foreground">
-          NammaMarg is built for BBMP ward operations, contractor workflows, and city-wide road
+          NammaMarga is built for BBMP ward operations, contractor workflows, and city-wide road
           health analytics. Contact your team lead for console access or pilot deployments across
           zones.
         </p>

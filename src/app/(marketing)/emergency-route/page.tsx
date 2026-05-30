@@ -2,9 +2,9 @@ import { EmergencyRouteExperience } from "@/components/routing/emergency-route-e
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Emergency Green Corridor | NammaMarg",
+  title: "Emergency Green Corridor | NammaMarga",
   description:
-    "Find the safest ambulance route in Bengaluru — no login required. Avoid potholes with AI-scored green corridors.",
+    "Find the safest route in Bengaluru — no login required. Avoid potholes with AI-scored green corridors.",
 };
 
 export default function PublicEmergencyRoutePage() {

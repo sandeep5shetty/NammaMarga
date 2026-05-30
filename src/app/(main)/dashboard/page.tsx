@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { IssueStatusBadge } from "@/components/civic/issue-status-badge";
+import { IssueUpvoteButton } from "@/components/civic/issue-upvote-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
@@ -10,6 +11,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ISSUE_TYPE_LABELS, STATUS_LABELS } from "@/types/civic";
+import type { IssueStatus } from "@prisma/client";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertTriangle,
@@ -214,37 +216,45 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-1">
               {recentIssues.map((issue) => (
-                <Link
+                <div
                   key={issue.id as string}
-                  href={`/dashboard/reports/${issue.id}`}
-                  className="flex items-center justify-between rounded-lg px-3 py-3 hover:bg-muted/50 transition-colors group"
+                  className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg px-3 py-3 hover:bg-muted/50 transition-colors group"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                      <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                  <Link
+                    href={`/dashboard/reports/${issue.id}`}
+                    className="flex items-center justify-between flex-1 min-w-0 gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                        <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+                          {issue.title as string}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {ISSUE_TYPE_LABELS[issue.type as keyof typeof ISSUE_TYPE_LABELS]} ·{" "}
+                          {formatDistanceToNow(new Date(issue.createdAt as string), { addSuffix: true })}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                        {issue.title as string}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {ISSUE_TYPE_LABELS[issue.type as keyof typeof ISSUE_TYPE_LABELS]} ·{" "}
-                        {formatDistanceToNow(new Date(issue.createdAt as string), { addSuffix: true })}
-                      </p>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <IssueStatusBadge
+                        status={issue.status as IssueStatus}
+                        className="text-xs"
+                      />
+                      <CheckCircle2 className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <Badge variant="outline" className="text-xs">
-                      {STATUS_LABELS[issue.status as keyof typeof STATUS_LABELS]}
-                    </Badge>
-                    {(issue.reportCount as number) > 1 && (
-                      <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {issue.reportCount as number} reports
-                      </span>
+                  </Link>
+                  <IssueUpvoteButton
+                    issueId={issue.id as string}
+                    initialCount={Math.max(
+                      (issue.voteCount as number) ?? 0,
+                      (issue.reportCount as number) ?? 0,
                     )}
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </Link>
+                    className="w-full sm:w-auto shrink-0"
+                  />
+                </div>
               ))}
             </div>
           )}

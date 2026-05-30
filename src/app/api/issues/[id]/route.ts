@@ -37,7 +37,10 @@ export async function GET(
         activityLogs: { orderBy: { createdAt: "desc" }, take: 20 },
         detection: true,
         votes: { include: { user: { select: { name: true } } } },
-        statusHistory: { orderBy: { createdAt: "desc" }, take: 10 },
+        statusHistory: {
+          orderBy: { createdAt: "asc" },
+          include: { changedBy: { select: { name: true } } },
+        },
         roadSegment: { select: { name: true, healthScore: true } },
       },
     });
@@ -84,8 +87,36 @@ export async function PATCH(
       data: {
         ...parsed.data,
         ...(parsed.data.status === "RESOLVED" && { resolvedAt: new Date() }),
+        ...(parsed.data.status === "VERIFIED" && { resolvedAt: existing.resolvedAt ?? new Date() }),
       },
     });
+
+    if (parsed.data.contractorId && parsed.data.contractorId !== existing.contractorId) {
+      const contractor = await db.contractor.findUnique({
+        where: { id: parsed.data.contractorId },
+      });
+      await db.issueStatusHistory.create({
+        data: {
+          issueId: id,
+          changedByUserId: user.id,
+          fromStatus: existing.status,
+          toStatus: existing.status,
+          note: contractor
+            ? `Contractor assigned: ${contractor.name}${contractor.company ? ` (${contractor.company})` : ""}`
+            : "Contractor assigned",
+        },
+      });
+      await db.activityLog.create({
+        data: {
+          action: "CONTRACTOR_ASSIGNED",
+          details: contractor
+            ? `${contractor.name} assigned to this issue`
+            : "Contractor assigned",
+          issueId: id,
+          userId: user.id,
+        },
+      });
+    }
 
     if (parsed.data.status) {
       await db.issueStatusHistory.create({

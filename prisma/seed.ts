@@ -206,6 +206,45 @@ const HEALTH_FACILITIES: HealthFacilitySeed[] = [
     briefInfo: "108 EMS staging point — oxygen, basic life support, hospital routing.",
   },
   {
+    name: "ESIC Model Hospital — Yelahanka",
+    type: "MULTISPECIALTY" as const,
+    kind: "HOSPITAL" as const,
+    hasIcu: true,
+    hasEmergency: true,
+    hasBloodBank: true,
+    lat: 13.1002,
+    lng: 77.5964,
+    phone: "080-2856-0000",
+    address: "Yelahanka, Bengaluru",
+    briefInfo: "North corridor emergency — ICU, blood bank, trauma intake.",
+  },
+  {
+    name: "Rotary Blood Bank — Yelahanka",
+    type: "GENERAL" as const,
+    kind: "BLOOD_BANK" as const,
+    hasIcu: false,
+    hasEmergency: false,
+    hasBloodBank: true,
+    lat: 13.098,
+    lng: 77.592,
+    phone: "080-2856-1010",
+    address: "Yelahanka New Town, Bengaluru",
+    briefInfo: "Blood components for north Bengaluru corridors & airport road.",
+  },
+  {
+    name: "Apollo Pharmacy 24x7 — Yelahanka",
+    type: "GENERAL" as const,
+    kind: "PHARMACY" as const,
+    hasIcu: false,
+    hasEmergency: true,
+    hasBloodBank: false,
+    lat: 13.102,
+    lng: 77.598,
+    phone: "080-2856-2222",
+    address: "Bellary Road, Yelahanka",
+    briefInfo: "24/7 medicines & oxygen on NH-44 / airport access routes.",
+  },
+  {
     name: "Trauma Care Centre — Hosur Road",
     type: "TRAUMA" as const,
     kind: "TRAUMA_CENTER" as const,
@@ -362,12 +401,69 @@ const HEALTH_FACILITIES: HealthFacilitySeed[] = [
   },
 ];
 
+/** Wikimedia Commons — actual road potholes (not generic/stock mismatches). */
+const WIKI = (path: string) => `https://upload.wikimedia.org/wikipedia/commons/${path}`;
+
 const POTHOLE_IMAGES = [
-  "https://images.unsplash.com/photo-1589939705382-10e4937fd7f2?w=800",
-  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800",
-  "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=800",
-  "https://images.unsplash.com/photo-1513828583688-c52646db42da?w=800",
+  WIKI("a/a7/Potholes_on_asphalt_road_20171023.jpg"),
+  WIKI("c/c7/Pothole_Big.jpg"),
+  WIKI("b/bc/Pot_holes.jpg"),
+  WIKI(
+    "0/0f/Pot_Holes_and_Patch_Repairs_on_the_Roads%2C_Sheffield_-_geograph.org.uk_-_3807006.jpg",
+  ),
+  WIKI("f/f2/Portlandroadrut.jpg"),
+  WIKI("4/4c/Bus_In_Hole_%28448614610%29.jpg"),
 ];
+
+/** Road surface damage (not reused for POTHOLE-only reports). */
+const ROAD_DAMAGE_IMAGES = [
+  WIKI("f/f2/Portlandroadrut.jpg"),
+  WIKI(
+    "0/0f/Pot_Holes_and_Patch_Repairs_on_the_Roads%2C_Sheffield_-_geograph.org.uk_-_3807006.jpg",
+  ),
+  WIKI("d/d4/Parte_m%C3%ADnima_de_la_pista_deteriorada.jpg"),
+];
+
+/** Type-appropriate reference photos — never assign pothole photos to non-pothole types. */
+const ISSUE_IMAGES_BY_TYPE: Partial<Record<IssueType, string[]>> = {
+  POTHOLE: POTHOLE_IMAGES,
+  ROAD_DAMAGE: ROAD_DAMAGE_IMAGES,
+  GARBAGE: [
+    WIKI("6/6e/Garbage_in_Dhaka.jpg"),
+    WIKI("9/9c/Street_garbage_in_India.jpg"),
+  ],
+  STREETLIGHT: [
+    WIKI("4/4c/Street_light_at_night.jpg"),
+    WIKI("2/2e/Street_lamp.jpg"),
+  ],
+  WATERLOGGING: [
+    WIKI("f/f7/FEMA_-_11519_-_Photograph_by_Dave_Saville_taken_on_09-26-2004_in_Florida.jpg"),
+    WIKI("a/a1/Flood_damage_in_American_Fork_Canyon_June_2023.jpg"),
+  ],
+  SEWAGE: [
+    WIKI("5/5a/Open_sewer_in_Dhaka.jpg"),
+    WIKI("3/3e/Sewage_on_road.jpg"),
+  ],
+  FALLEN_TREE: [
+    WIKI("4/4f/Fallen_tree_on_road.jpg"),
+    WIKI("8/8d/Tree_fallen_on_road.jpg"),
+  ],
+  TRAFFIC_SIGNAL: [
+    WIKI("6/6e/Traffic_lights_in_London.jpg"),
+    WIKI("9/97/Traffic_signal.jpg"),
+  ],
+  WATER_LEAK: [
+    WIKI("2/2f/Water_leaking_on_road.jpg"),
+    WIKI("7/7a/Water_on_road.jpg"),
+  ],
+};
+
+function imageForIssueType(type: IssueType): string {
+  const pool = ISSUE_IMAGES_BY_TYPE[type];
+  if (pool?.length) return pick(pool);
+  if (type === "POTHOLE") return pick(POTHOLE_IMAGES);
+  return pick(ROAD_DAMAGE_IMAGES);
+}
 
 const STREET_NAMES = [
   "1st Cross", "2nd Main", "3rd Block", "Ring Road stretch", "Flyover approach",
@@ -389,7 +485,123 @@ const POTHOLE_TITLES = [
 ];
 
 const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "MEDIUM", "HIGH", "HIGH", "CRITICAL"];
-const ACTIVE_STATUSES: IssueStatus[] = ["REPORTED", "REPORTED", "ACKNOWLEDGED", "IN_PROGRESS"];
+
+const SEED_STATUS_POOL: IssueStatus[] = [
+  "REPORTED",
+  "REPORTED",
+  "ACKNOWLEDGED",
+  "ACKNOWLEDGED",
+  "IN_PROGRESS",
+  "IN_PROGRESS",
+  "IN_PROGRESS",
+  "RESOLVED",
+  "RESOLVED",
+  "VERIFIED",
+];
+
+function hoursAfter(date: Date, hours: number) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+async function backfillSeedLifecycle(
+  issueId: string,
+  status: IssueStatus,
+  createdAt: Date,
+  contractorIds: string[],
+) {
+  await prisma.issueStatusHistory.create({
+    data: {
+      issueId,
+      toStatus: "REPORTED",
+      createdAt,
+      note: "Citizen report submitted",
+    },
+  });
+
+  let at = createdAt;
+
+  if (["ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED", "VERIFIED"].includes(status)) {
+    at = hoursAfter(at, 4 + Math.random() * 20);
+    await prisma.issueStatusHistory.create({
+      data: {
+        issueId,
+        fromStatus: "REPORTED",
+        toStatus: "ACKNOWLEDGED",
+        createdAt: at,
+        note: "BBMP ward office acknowledged the report",
+      },
+    });
+    await prisma.activityLog.create({
+      data: {
+        issueId,
+        action: "STATUS_CHANGED",
+        details: "Status changed to ACKNOWLEDGED",
+      },
+    });
+  }
+
+  if (["IN_PROGRESS", "RESOLVED", "VERIFIED"].includes(status) && contractorIds.length > 0) {
+    at = hoursAfter(at, 8 + Math.random() * 36);
+    const contractorId = pick(contractorIds);
+    const contractor = await prisma.contractor.findUnique({ where: { id: contractorId } });
+    await prisma.issue.update({
+      where: { id: issueId },
+      data: { contractorId },
+    });
+    await prisma.issueStatusHistory.create({
+      data: {
+        issueId,
+        fromStatus: "ACKNOWLEDGED",
+        toStatus: "IN_PROGRESS",
+        createdAt: at,
+        note: contractor
+          ? `Contractor assigned: ${contractor.name}`
+          : "Contractor assigned — repair started",
+      },
+    });
+    await prisma.activityLog.create({
+      data: {
+        issueId,
+        action: "CONTRACTOR_ASSIGNED",
+        details: contractor ? `${contractor.name} assigned` : "Contractor assigned",
+      },
+    });
+  }
+
+  if (["RESOLVED", "VERIFIED"].includes(status)) {
+    at = hoursAfter(at, 24 + Math.random() * 72);
+    await prisma.issueStatusHistory.create({
+      data: {
+        issueId,
+        fromStatus: "IN_PROGRESS",
+        toStatus: "RESOLVED",
+        createdAt: at,
+        note: "Contractor marked the repair complete",
+      },
+    });
+    await prisma.activityLog.create({
+      data: {
+        issueId,
+        action: "STATUS_CHANGED",
+        details: "Status changed to RESOLVED",
+      },
+    });
+  }
+
+  if (status === "VERIFIED") {
+    at = hoursAfter(at, 12 + Math.random() * 48);
+    await prisma.issueStatusHistory.create({
+      data: {
+        issueId,
+        fromStatus: "RESOLVED",
+        toStatus: "VERIFIED",
+        createdAt: at,
+        note: "Community verification complete",
+      },
+    });
+  }
+}
+
 const OTHER_TYPES: Array<{ type: IssueType; severity: Severity; title: string }> = [
   { type: "GARBAGE", severity: "HIGH", title: "Garbage pile blocking footpath" },
   { type: "STREETLIGHT", severity: "MEDIUM", title: "Broken streetlight — dark stretch" },
@@ -513,6 +725,10 @@ async function main() {
     if (r.wardId) roadsByWard.set(r.wardId, r.id);
   }
 
+  const contractorIds = (await prisma.contractor.findMany({ select: { id: true } })).map(
+    (c) => c.id,
+  );
+
   let potholeCount = 0;
   let otherCount = 0;
 
@@ -525,13 +741,17 @@ async function main() {
     for (let i = 0; i < count; i++) {
       const { lat, lng } = jitter(ward.latitude, ward.longitude, HOTSPOT_WARDS.has(ward.number) ? 0.055 : 0.04);
       const severity = pick(SEVERITIES);
-      const status = pick(ACTIVE_STATUSES);
+      const status = pick(SEED_STATUS_POOL);
       const street = pick(STREET_NAMES);
       const title = `${SEED_PREFIX} ${pick(POTHOLE_TITLES)} — ${ward.name} ${street}`;
       const createdAt = new Date(Date.now() - Math.random() * 21 * 24 * 60 * 60 * 1000);
       const votes = randomVotes(severity);
+      const resolvedAt =
+        status === "RESOLVED" || status === "VERIFIED"
+          ? hoursAfter(createdAt, 48 + Math.random() * 120)
+          : undefined;
 
-      await prisma.issue.create({
+      const issue = await prisma.issue.create({
         data: {
           title,
           description: `Citizen-reported pothole on ${street}, Ward ${ward.number} (${ward.name}). AI confidence 0.82.`,
@@ -539,7 +759,7 @@ async function main() {
           severity,
           status,
           confidence: 0.75 + Math.random() * 0.2,
-          imageUrl: pick(POTHOLE_IMAGES),
+          imageUrl: imageForIssueType("POTHOLE"),
           latitude: lat,
           longitude: lng,
           address: `${street}, ${ward.name}, Bengaluru`,
@@ -549,8 +769,10 @@ async function main() {
           voteCount: votes,
           priorityScore: calculatePriorityScore({ severity, voteCount: votes, createdAt }),
           createdAt,
+          resolvedAt,
         },
       });
+      await backfillSeedLifecycle(issue.id, status, createdAt, contractorIds);
       potholeCount++;
     }
   }
@@ -562,16 +784,21 @@ async function main() {
     const { lat, lng } = jitter(ward.latitude, ward.longitude);
     const createdAt = new Date(Date.now() - Math.random() * 14 * 24 * 60 * 60 * 1000);
     const votes = randomVotes(other.severity);
+    const status = pick(SEED_STATUS_POOL);
+    const resolvedAt =
+      status === "RESOLVED" || status === "VERIFIED"
+        ? hoursAfter(createdAt, 48 + Math.random() * 96)
+        : undefined;
 
-    await prisma.issue.create({
+    const issue = await prisma.issue.create({
       data: {
         title: `${SEED_PREFIX} ${other.title} — ${ward.name}`,
         description: `Additional civic issue for demo analytics.`,
         type: other.type,
         severity: other.severity,
-        status: pick(ACTIVE_STATUSES),
+        status,
         confidence: 0.8,
-        imageUrl: pick(POTHOLE_IMAGES),
+        imageUrl: imageForIssueType(other.type),
         latitude: lat,
         longitude: lng,
         address: `${ward.name}, Bengaluru`,
@@ -581,8 +808,10 @@ async function main() {
         voteCount: votes,
         priorityScore: calculatePriorityScore({ severity: other.severity, voteCount: votes, createdAt }),
         createdAt,
+        resolvedAt,
       },
     });
+    await backfillSeedLifecycle(issue.id, status, createdAt, contractorIds);
     otherCount++;
   }
 

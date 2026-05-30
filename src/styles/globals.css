@@ -101,7 +101,8 @@
   color: hsl(var(--foreground));
 }
 
-html, body {
+html,
+body {
   font-family: var(--font-inter), "Inter", sans-serif !important;
 }
 

@@ -1,8 +1,14 @@
 import { findAlongRouteFacilities, type AlongRouteFacility } from "@/lib/hospitals/along-route";
+import { injectDemoCorridorIssues } from "@/lib/routing/demo-corridor-hazards";
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
-import { estimateEtaMinutes, VEHICLE_PROFILES } from "@/lib/routing/vehicle-profiles";
-import type { EmergencyVehicleType, IssueType } from "@prisma/client";
+import {
+  estimateEtaMinutes,
+  normalizeVehicleType,
+  VEHICLE_PROFILES,
+} from "@/lib/routing/vehicle-profiles";
+import type { IssueType } from "@prisma/client";
+import type { EmergencyVehicleType } from "@/types/emergency";
 
 export type RouteCoordinate = [number, number];
 
@@ -97,12 +103,12 @@ const ACTIVE_STATUSES = ["REPORTED", "ACKNOWLEDGED", "IN_PROGRESS"] as const;
 async function fetchMapboxRoutes(
   source: { lat: number; lng: number },
   dest: { lat: number; lng: number },
-  vehicleType: EmergencyVehicleType = "AMBULANCE",
+  vehicleType: EmergencyVehicleType = "AMBULANCE_BLS",
 ): Promise<MapboxRoute[]> {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!token) throw new Error("Mapbox token not configured");
 
-  const profile = VEHICLE_PROFILES[vehicleType].mapboxProfile;
+  const profile = VEHICLE_PROFILES[normalizeVehicleType(vehicleType)].mapboxProfile;
   const coords = `${source.lng},${source.lat};${dest.lng},${dest.lat}`;
   const url =
     `https://api.mapbox.com/directions/v5/${profile}/${coords}` +
@@ -271,7 +277,11 @@ function scoreRouteAgainstCivicData(
   }
 
   const routeRisk = Math.round(
-    criticalCount * 22 + highCount * 14 + mediumCount * 7 + lowCount * 3 + potholeCount * 8,
+    criticalCount * 24 +
+      highCount * 16 +
+      mediumCount * 8 +
+      lowCount * 4 +
+      potholeCount * 12,
   );
   const safetyScore = Math.max(0, Math.min(100, 100 - Math.min(routeRisk, 98)));
 
@@ -388,11 +398,11 @@ export async function getEmergencyRoutes(
   dest: { lat: number; lng: number; label?: string },
   options?: { vehicleType?: EmergencyVehicleType; excludeHospitalId?: string },
 ): Promise<EmergencyRouteResult> {
-  const vehicleType = options?.vehicleType ?? "AMBULANCE";
+  const vehicleType = normalizeVehicleType(options?.vehicleType);
   const mapboxRoutes = await fetchMapboxRoutes(source, dest, vehicleType);
   const bounds = getCorridorBounds(source, dest);
 
-  const issues = await db.issue.findMany({
+  const dbIssues = await db.issue.findMany({
     where: {
       duplicateOfId: null,
       status: { in: [...ACTIVE_STATUSES] },
@@ -410,6 +420,23 @@ export async function getEmergencyRoutes(
     },
     orderBy: { priorityScore: "desc" },
   });
+
+  const preliminary = mapboxRoutes.map((route) =>
+    scoreRouteAgainstCivicData(route.geometry, dbIssues),
+  );
+  const preliminaryRecommendedIdx = preliminary.reduce((best, r, i) =>
+    r.hazardIndex < preliminary[best].hazardIndex - 0.5 ||
+    (Math.abs(r.hazardIndex - preliminary[best].hazardIndex) < 0.5 &&
+      r.safetyScore > preliminary[best].safetyScore)
+      ? i
+      : best,
+  0);
+
+  const issues = injectDemoCorridorIssues(
+    mapboxRoutes,
+    dbIssues,
+    preliminaryRecommendedIdx,
+  );
 
   const analyses: RouteAnalysis[] = mapboxRoutes.map((route, index) => {
     const scored = scoreRouteAgainstCivicData(route.geometry, issues);
@@ -483,7 +510,9 @@ export async function getEmergencyRoutes(
     geometry: r.geometry,
     isRecommended: r.isRecommended,
   }));
-  const corridorHazards = buildCorridorHazards(issues, routeMeta, recommended.id);
+  const corridorHazards = buildCorridorHazards(issues, routeMeta, recommended.id).filter(
+    (h) => h.onRoutes.length > 0,
+  );
 
   const sorted = [...analyses].sort((a, b) => {
     if (a.isRecommended) return -1;

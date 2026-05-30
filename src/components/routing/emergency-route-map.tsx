@@ -4,6 +4,10 @@ import type { AlongRouteFacility } from "@/lib/hospitals/along-route";
 import type { CorridorHazard, RouteAnalysis } from "@/lib/routing/emergency-route";
 import { getRouteColor } from "@/lib/routing/emergency-route";
 import {
+  getMapPotholesForRoute,
+  NEARBY_POTHOLE_RADIUS_KM,
+} from "@/lib/routing/nearby-route-potholes";
+import {
   FACILITY_KIND_LABELS,
   FACILITY_KIND_MAP_COLOR,
 } from "@/types/emergency";
@@ -11,7 +15,7 @@ import { ISSUE_TYPE_LABELS, SEVERITY_COLORS } from "@/types/civic";
 import type { IssueType, Severity } from "@prisma/client";
 import { cn } from "@/utils";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -25,17 +29,45 @@ type EmergencyRouteMapProps = {
   destination: PlacePoint | null;
   focusRouteId: string | null;
   onSelectRoute?: (routeId: string) => void;
-  showPotholesOnly?: boolean;
-  showHeatmap?: boolean;
+  showNearbyPotholes?: boolean;
+  showHealthcareStops?: boolean;
+  highlightFacilityId?: string | null;
+  onFacilitySelect?: (facility: AlongRouteFacility) => void;
   comparisonMode?: boolean;
   className?: string;
 };
 
-function hazardAffiliation(h: CorridorHazard, recommendedId: string): string {
-  if (h.onRecommendedRoute) return "on-recommended";
-  if (h.onRoutes.length > 0) return "on-alternate";
-  if (h.nearestRouteM < 200) return "near-corridor";
-  return "corridor";
+function createPotholeMarkerElement(h: CorridorHazard): HTMLButtonElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = h.title;
+  el.setAttribute("aria-label", h.title);
+  const color =
+    h.severity === "CRITICAL" ? "#ef4444" : h.severity === "HIGH" ? "#f97316" : "#eab308";
+  el.className =
+    "block h-4 w-4 rounded-full border-2 border-white shadow-md cursor-pointer hover:scale-125 transition-transform";
+  el.style.backgroundColor = color;
+  return el;
+}
+
+function createFacilityMarkerElement(
+  f: AlongRouteFacility,
+  selected: boolean,
+): HTMLButtonElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = f.name;
+  el.setAttribute("aria-label", f.name);
+  const color = FACILITY_KIND_MAP_COLOR[f.kind];
+  el.className = [
+    "health-facility-pin flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-lg",
+    "transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white",
+    selected ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-black/40" : "",
+  ].join(" ");
+  el.style.backgroundColor = color;
+  const label = FACILITY_KIND_LABELS[f.kind].charAt(0);
+  el.innerHTML = `<span class="text-[11px] font-bold text-white leading-none">${label}</span>`;
+  return el;
 }
 
 function buildHazardPopup(h: CorridorHazard, isLight: boolean) {
@@ -79,6 +111,20 @@ function buildFacilityPopup(f: AlongRouteFacility, isLight: boolean) {
   `;
 }
 
+/** Extend polyline to destination when Mapbox ends on the road network. */
+function routeDisplayCoordinates(
+  geometry: RouteAnalysis["geometry"],
+  dest: PlacePoint | null,
+): RouteAnalysis["geometry"] {
+  if (!dest || geometry.length === 0) return geometry;
+  const [lastLng, lastLat] = geometry[geometry.length - 1];
+  const dLat = dest.latitude - lastLat;
+  const dLng = dest.longitude - lastLng;
+  const approxM = Math.sqrt(dLat * dLat + dLng * dLng) * 111_000;
+  if (approxM < 40) return geometry;
+  return [...geometry, [dest.longitude, dest.latitude]];
+}
+
 function routePaintProps(
   r: RouteAnalysis,
   focusRoute: RouteAnalysis | undefined,
@@ -111,24 +157,31 @@ export function EmergencyRouteMap({
   destination,
   focusRouteId,
   onSelectRoute,
-  showPotholesOnly = false,
-  showHeatmap = true,
+  showNearbyPotholes = true,
+  showHealthcareStops = true,
+  highlightFacilityId = null,
+  onFacilitySelect,
   comparisonMode = false,
   className,
 }: EmergencyRouteMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const facilityMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const potholeMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const lastStyleRef = useRef<string | null>(null);
   const layersReadyRef = useRef(false);
-  const hazardEventsBoundRef = useRef(false);
-  const facilityEventsBoundRef = useRef(false);
   const routeEventsBoundRef = useRef(false);
   const didFitBoundsRef = useRef(false);
+  const lastFitKeyRef = useRef("");
+  const lastDataSyncKeyRef = useRef("");
+  const hazardsRef = useRef<CorridorHazard[]>([]);
   const onSelectRouteRef = useRef(onSelectRoute);
+  const onFacilitySelectRef = useRef(onFacilitySelect);
   const { resolvedTheme } = useTheme();
 
+  onFacilitySelectRef.current = onFacilitySelect;
   onSelectRouteRef.current = onSelectRoute;
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -142,10 +195,143 @@ export function EmergencyRouteMap({
   const focusRoute =
     routes.find((r) => r.id === focusRouteId) ?? routes.find((r) => r.isRecommended);
 
-  const filteredHazards = showPotholesOnly ? hazards.filter((h) => h.isPothole) : hazards;
+  const mapPotholes = useMemo(() => {
+    if (!showNearbyPotholes) return [];
+    return getMapPotholesForRoute(hazards, focusRoute);
+  }, [showNearbyPotholes, hazards, focusRoute]);
 
-  const visibleFacilities = alongRouteFacilities.filter((f) =>
-    focusRouteId ? f.routeIds.includes(focusRouteId) : true,
+  hazardsRef.current = mapPotholes;
+
+  const visibleFacilities = useMemo(
+    () =>
+      alongRouteFacilities.filter((f) =>
+        focusRouteId ? f.routeIds.includes(focusRouteId) : true,
+      ),
+    [alongRouteFacilities, focusRouteId],
+  );
+
+  const routesDataKey = useMemo(
+    () => routes.map((r) => `${r.id}:${r.geometry.length}`).join("|"),
+    [routes],
+  );
+
+  const hazardsDataKey = useMemo(
+    () => hazards.map((h) => h.id).join(","),
+    [hazards],
+  );
+
+  const potholeViewKey = useMemo(
+    () =>
+      `${showNearbyPotholes}|${focusRouteId ?? ""}|${mapPotholes.map((h) => h.id).join(",")}`,
+    [showNearbyPotholes, focusRouteId, mapPotholes],
+  );
+
+  const facilitiesKey = useMemo(
+    () => visibleFacilities.map((f) => f.id).join(","),
+    [visibleFacilities],
+  );
+
+  const endpointsKey = useMemo(
+    () =>
+      `${source?.latitude ?? ""},${source?.longitude ?? ""}|${destination?.latitude ?? ""},${destination?.longitude ?? ""}`,
+    [source?.latitude, source?.longitude, destination?.latitude, destination?.longitude],
+  );
+
+  const buildRouteFeatures = useCallback(() => {
+    return [...routes]
+      .sort((a, b) => {
+        const pa = routePaintProps(a, focusRoute, comparisonMode).zIndex;
+        const pb = routePaintProps(b, focusRoute, comparisonMode).zIndex;
+        return pa - pb;
+      })
+      .map((r) => {
+        const p = routePaintProps(r, focusRoute, comparisonMode);
+        return {
+          type: "Feature" as const,
+          properties: {
+            id: p.id,
+            color: p.color,
+            width: p.width,
+            opacity: p.opacity,
+          },
+          geometry: {
+            type: "LineString" as const,
+            coordinates: routeDisplayCoordinates(r.geometry, destination),
+          },
+        };
+      });
+  }, [routes, focusRoute, comparisonMode, destination]);
+
+  const updateRoutesSource = useCallback(
+    (map: mapboxgl.Map) => {
+      const source = map.getSource("routes") as mapboxgl.GeoJSONSource | undefined;
+      if (!source) return;
+      source.setData({ type: "FeatureCollection", features: buildRouteFeatures() });
+    },
+    [buildRouteFeatures],
+  );
+
+  const syncFacilityMarkers = useCallback(
+    (map: mapboxgl.Map) => {
+      facilityMarkersRef.current.forEach((m) => m.remove());
+      facilityMarkersRef.current = [];
+
+      if (!showHealthcareStops) return;
+
+      for (const f of visibleFacilities) {
+        const selected = f.id === highlightFacilityId;
+        const el = createFacilityMarkerElement(f, selected);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onFacilitySelectRef.current?.(f);
+          popupRef.current?.remove();
+          popupRef.current = new mapboxgl.Popup({
+            offset: 16,
+            maxWidth: "280px",
+            closeOnClick: true,
+          })
+            .setLngLat([f.longitude, f.latitude])
+            .setHTML(buildFacilityPopup(f, isLight))
+            .addTo(map);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+          .setLngLat([f.longitude, f.latitude])
+          .addTo(map);
+        facilityMarkersRef.current.push(marker);
+      }
+    },
+    [visibleFacilities, showHealthcareStops, highlightFacilityId, isLight],
+  );
+
+  const fitMapToCorridor = useCallback(
+    (map: mapboxgl.Map) => {
+      const fitKey = `${routesDataKey}|${endpointsKey}`;
+      if (didFitBoundsRef.current && lastFitKeyRef.current === fitKey) return;
+      if (routes.length === 0 && !source) return;
+
+      const bounds = new mapboxgl.LngLatBounds();
+      routes.forEach((r) => r.geometry.forEach(([lng, lat]) => bounds.extend([lng, lat])));
+      mapPotholes.forEach((h) => bounds.extend([h.longitude, h.latitude]));
+      visibleFacilities.forEach((f) => bounds.extend([f.longitude, f.latitude]));
+      if (source) bounds.extend([source.longitude, source.latitude]);
+      if (destination) bounds.extend([destination.longitude, destination.latitude]);
+
+      if (bounds.isEmpty()) return;
+
+      lastFitKeyRef.current = fitKey;
+      didFitBoundsRef.current = true;
+      map.fitBounds(bounds, { padding: 72, maxZoom: 13, duration: 0 });
+    },
+    [
+      routes,
+      routesDataKey,
+      endpointsKey,
+      mapPotholes,
+      visibleFacilities,
+      source,
+      destination,
+    ],
   );
 
   const bindRouteInteractions = useCallback((map: mapboxgl.Map) => {
@@ -166,6 +352,48 @@ export function EmergencyRouteMap({
     });
   }, []);
 
+  const clearLegacyHazardLayers = useCallback((map: mapboxgl.Map) => {
+    for (const id of [
+      "hazard-heatmap",
+      "hazard-clusters",
+      "hazard-cluster-count",
+      "hazard-points",
+      "hazard-pothole-ring",
+      "hazard-critical-pulse",
+    ]) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    if (map.getSource("hazards")) map.removeSource("hazards");
+  }, []);
+
+  const syncPotholeMarkers = useCallback(
+    (map: mapboxgl.Map) => {
+      clearLegacyHazardLayers(map);
+      potholeMarkersRef.current.forEach((m) => m.remove());
+      potholeMarkersRef.current = [];
+
+      if (!showNearbyPotholes || mapPotholes.length === 0) return;
+
+      for (const h of mapPotholes) {
+        const el = createPotholeMarkerElement(h);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          popupRef.current?.remove();
+          popupRef.current = new mapboxgl.Popup({ offset: 12, maxWidth: "260px" })
+            .setLngLat([h.longitude, h.latitude])
+            .setHTML(buildHazardPopup(h, isLight))
+            .addTo(map);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+          .setLngLat([h.longitude, h.latitude])
+          .addTo(map);
+        potholeMarkersRef.current.push(marker);
+      }
+    },
+    [mapPotholes, showNearbyPotholes, isLight, clearLegacyHazardLayers],
+  );
+
   const syncLayers = useCallback(
     (map: mapboxgl.Map) => {
       const removeLayer = (id: string) => {
@@ -175,47 +403,15 @@ export function EmergencyRouteMap({
         if (map.getSource(id)) map.removeSource(id);
       };
 
-      [
-        "route-line",
-        "route-line-hit",
-        "facility-points",
-        "facility-labels",
-        "hazard-heatmap",
-        "hazard-clusters",
-        "hazard-cluster-count",
-        "hazard-points",
-        "hazard-pothole-ring",
-        "hazard-critical-pulse",
-      ].forEach(removeLayer);
-      ["routes", "facilities", "hazards"].forEach(removeSource);
-
+      ["route-line", "route-line-hit"].forEach(removeLayer);
+      if (map.getSource("routes")) removeSource("routes");
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
 
       if (routes.length > 0) {
-        const routeFeatures = [...routes]
-          .sort((a, b) => {
-            const pa = routePaintProps(a, focusRoute, comparisonMode).zIndex;
-            const pb = routePaintProps(b, focusRoute, comparisonMode).zIndex;
-            return pa - pb;
-          })
-          .map((r) => {
-            const p = routePaintProps(r, focusRoute, comparisonMode);
-            return {
-              type: "Feature" as const,
-              properties: {
-                id: p.id,
-                color: p.color,
-                width: p.width,
-                opacity: p.opacity,
-              },
-              geometry: { type: "LineString" as const, coordinates: r.geometry },
-            };
-          });
-
         map.addSource("routes", {
           type: "geojson",
-          data: { type: "FeatureCollection", features: routeFeatures },
+          data: { type: "FeatureCollection", features: buildRouteFeatures() },
         });
 
         map.addLayer({
@@ -245,270 +441,7 @@ export function EmergencyRouteMap({
         bindRouteInteractions(map);
       }
 
-      if (visibleFacilities.length > 0) {
-        map.addSource("facilities", {
-          type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: visibleFacilities.map((f) => ({
-              type: "Feature",
-              properties: {
-                id: f.id,
-                kind: f.kind,
-                name: f.name,
-                color: FACILITY_KIND_MAP_COLOR[f.kind],
-                hasIcu: f.hasIcu ? 1 : 0,
-              },
-              geometry: {
-                type: "Point",
-                coordinates: [f.longitude, f.latitude],
-              },
-            })),
-          },
-        });
-
-        map.addLayer({
-          id: "facility-points",
-          type: "circle",
-          source: "facilities",
-          paint: {
-            "circle-color": ["get", "color"],
-            "circle-radius": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10,
-              ["case", ["==", ["get", "hasIcu"], 1], 9, 7],
-              14,
-              ["case", ["==", ["get", "hasIcu"], 1], 12, 9],
-            ],
-            "circle-stroke-width": 2.5,
-            "circle-stroke-color": strokeColor,
-            "circle-opacity": 0.92,
-          },
-        });
-
-        map.addLayer({
-          id: "facility-labels",
-          type: "symbol",
-          source: "facilities",
-          minzoom: 12,
-          layout: {
-            "text-field": ["get", "name"],
-            "text-size": 10,
-            "text-offset": [0, 1.4],
-            "text-anchor": "top",
-            "text-max-width": 12,
-          },
-          paint: {
-            "text-color": isLight ? "#334155" : "#e2e8f0",
-            "text-halo-color": isLight ? "#ffffff" : "#0f172a",
-            "text-halo-width": 1.5,
-          },
-        });
-
-        if (!facilityEventsBoundRef.current) {
-          facilityEventsBoundRef.current = true;
-          map.on("click", "facility-points", (e) => {
-            const f = e.features?.[0];
-            const id = f?.properties?.id as string | undefined;
-            if (!id) return;
-            const facility = alongRouteFacilities.find((x) => x.id === id);
-            if (!facility) return;
-            popupRef.current?.remove();
-            popupRef.current = new mapboxgl.Popup({ offset: 14, maxWidth: "280px" })
-              .setLngLat(e.lngLat)
-              .setHTML(buildFacilityPopup(facility, isLight))
-              .addTo(map);
-          });
-          map.on("mouseenter", "facility-points", () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", "facility-points", () => {
-            map.getCanvas().style.cursor = "";
-          });
-        }
-      }
-
-      if (filteredHazards.length > 0) {
-        const hazardFeatures = filteredHazards.map((h) => ({
-          type: "Feature" as const,
-          properties: {
-            id: h.id,
-            severity: h.severity,
-            type: h.type,
-            isPothole: h.isPothole ? 1 : 0,
-            isCritical: h.severity === "CRITICAL" ? 1 : 0,
-            affiliation: hazardAffiliation(h, recommendedId),
-            color: SEVERITY_COLORS[h.severity as Severity],
-          },
-          geometry: {
-            type: "Point" as const,
-            coordinates: [h.longitude, h.latitude],
-          },
-        }));
-
-        map.addSource("hazards", {
-          type: "geojson",
-          data: { type: "FeatureCollection", features: hazardFeatures },
-          cluster: true,
-          clusterMaxZoom: 13,
-          clusterRadius: 45,
-        });
-
-        if (showHeatmap) {
-          map.addLayer({
-            id: "hazard-heatmap",
-            type: "heatmap",
-            source: "hazards",
-            maxzoom: 14,
-            paint: {
-              "heatmap-weight": [
-                "interpolate",
-                ["linear"],
-                ["+", ["get", "isPothole"], ["get", "isCritical"]],
-                0,
-                0.4,
-                2,
-                2.5,
-              ],
-              "heatmap-intensity": 1,
-              "heatmap-radius": 26,
-              "heatmap-opacity": 0.48,
-              "heatmap-color": [
-                "interpolate",
-                ["linear"],
-                ["heatmap-density"],
-                0,
-                "rgba(34,197,94,0)",
-                0.3,
-                "rgba(234,179,8,0.32)",
-                0.6,
-                "rgba(249,115,22,0.52)",
-                1,
-                "rgba(239,68,68,0.72)",
-              ],
-            },
-          });
-        }
-
-        map.addLayer({
-          id: "hazard-clusters",
-          type: "circle",
-          source: "hazards",
-          filter: ["has", "point_count"],
-          paint: {
-            "circle-color": [
-              "step",
-              ["get", "point_count"],
-              "#eab308",
-              5,
-              "#f97316",
-              15,
-              "#ef4444",
-            ],
-            "circle-radius": ["step", ["get", "point_count"], 14, 8, 20, 20, 26],
-            "circle-stroke-width": 2,
-            "circle-stroke-color": strokeColor,
-          },
-        });
-
-        map.addLayer({
-          id: "hazard-cluster-count",
-          type: "symbol",
-          source: "hazards",
-          filter: ["has", "point_count"],
-          layout: {
-            "text-field": "{point_count_abbreviated}",
-            "text-size": 12,
-            "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
-          },
-          paint: { "text-color": isLight ? "#0f172a" : "#fff" },
-        });
-
-        map.addLayer({
-          id: "hazard-points",
-          type: "circle",
-          source: "hazards",
-          filter: ["!", ["has", "point_count"]],
-          paint: {
-            "circle-color": [
-              "match",
-              ["get", "affiliation"],
-              "on-recommended",
-              "#ef4444",
-              "on-alternate",
-              "#f97316",
-              "near-corridor",
-              "#eab308",
-              "#94a3b8",
-            ],
-            "circle-radius": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10,
-              ["case", ["==", ["get", "isPothole"], 1], 7, 5],
-              14,
-              ["case", ["==", ["get", "isPothole"], 1], 11, 8],
-            ],
-            "circle-stroke-width": 2.5,
-            "circle-stroke-color": strokeColor,
-            "circle-opacity": 0.82,
-          },
-        });
-
-        map.addLayer({
-          id: "hazard-pothole-ring",
-          type: "circle",
-          source: "hazards",
-          filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "isPothole"], 1]],
-          paint: {
-            "circle-radius": 16,
-            "circle-color": "transparent",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#f97316",
-            "circle-opacity": 0.55,
-          },
-        });
-
-        map.addLayer({
-          id: "hazard-critical-pulse",
-          type: "circle",
-          source: "hazards",
-          filter: [
-            "all",
-            ["!", ["has", "point_count"]],
-            ["==", ["get", "severity"], "CRITICAL"],
-          ],
-          paint: {
-            "circle-color": "#ef4444",
-            "circle-radius": 18,
-            "circle-opacity": 0.14,
-          },
-        });
-
-        if (!hazardEventsBoundRef.current) {
-          hazardEventsBoundRef.current = true;
-          map.on("click", "hazard-points", (e) => {
-            const feat = e.features?.[0];
-            if (!feat?.properties?.id) return;
-            const hazard = filteredHazards.find((h) => h.id === feat.properties!.id);
-            if (!hazard) return;
-            popupRef.current?.remove();
-            popupRef.current = new mapboxgl.Popup({ offset: 12, maxWidth: "260px" })
-              .setLngLat(e.lngLat)
-              .setHTML(buildHazardPopup(hazard, isLight))
-              .addTo(map);
-          });
-          map.on("mouseenter", "hazard-points", () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", "hazard-points", () => {
-            map.getCanvas().style.cursor = "";
-          });
-        }
-      }
+      syncPotholeMarkers(map);
 
       if (source) {
         const m = new mapboxgl.Marker({ color: "#22c55e" })
@@ -527,39 +460,59 @@ export function EmergencyRouteMap({
         markersRef.current.push(m);
       }
 
-      if (!didFitBoundsRef.current && (routes.length > 0 || source)) {
-        const bounds = new mapboxgl.LngLatBounds();
-        routes.forEach((r) => r.geometry.forEach(([lng, lat]) => bounds.extend([lng, lat])));
-        filteredHazards.forEach((h) => bounds.extend([h.longitude, h.latitude]));
-        visibleFacilities.forEach((f) => bounds.extend([f.longitude, f.latitude]));
-        if (source) bounds.extend([source.longitude, source.latitude]);
-        if (destination) bounds.extend([destination.longitude, destination.latitude]);
-        map.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 800 });
-        didFitBoundsRef.current = true;
-      }
-
+      fitMapToCorridor(map);
+      syncFacilityMarkers(map);
       layersReadyRef.current = true;
     },
     [
       routes,
-      filteredHazards,
-      visibleFacilities,
-      alongRouteFacilities,
       source,
       destination,
-      focusRoute,
-      recommendedId,
-      showHeatmap,
-      comparisonMode,
-      strokeColor,
-      isLight,
       bindRouteInteractions,
+      buildRouteFeatures,
+      fitMapToCorridor,
+      syncFacilityMarkers,
+      syncPotholeMarkers,
     ],
   );
 
   useEffect(() => {
-    didFitBoundsRef.current = false;
-  }, [routes.length, source?.latitude, destination?.latitude]);
+    const map = mapRef.current;
+    if (!map || !layersReadyRef.current) return;
+    syncPotholeMarkers(map);
+  }, [potholeViewKey, syncPotholeMarkers]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !layersReadyRef.current) return;
+    syncFacilityMarkers(map);
+  }, [facilitiesKey, showHealthcareStops, highlightFacilityId, syncFacilityMarkers]);
+
+  const lastHighlightRef = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !highlightFacilityId) {
+      lastHighlightRef.current = highlightFacilityId;
+      return;
+    }
+    if (lastHighlightRef.current === highlightFacilityId) return;
+    lastHighlightRef.current = highlightFacilityId;
+
+    const f = visibleFacilities.find((x) => x.id === highlightFacilityId);
+    if (!f) return;
+    map.easeTo({
+      center: [f.longitude, f.latitude],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 500,
+    });
+  }, [highlightFacilityId, visibleFacilities]);
+
+  useEffect(() => {
+    const fitKey = `${routesDataKey}|${endpointsKey}`;
+    if (lastFitKeyRef.current !== fitKey) {
+      didFitBoundsRef.current = false;
+    }
+  }, [routesDataKey, endpointsKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -599,8 +552,8 @@ export function EmergencyRouteMap({
         mapRef.current?.remove();
         mapRef.current = null;
         layersReadyRef.current = false;
-        hazardEventsBoundRef.current = false;
-        facilityEventsBoundRef.current = false;
+        facilityMarkersRef.current.forEach((m) => m.remove());
+        potholeMarkersRef.current.forEach((m) => m.remove());
         routeEventsBoundRef.current = false;
         didFitBoundsRef.current = false;
       };
@@ -609,19 +562,39 @@ export function EmergencyRouteMap({
     if (lastStyleRef.current !== mapStyle) {
       lastStyleRef.current = mapStyle;
       layersReadyRef.current = false;
+      lastDataSyncKeyRef.current = "";
       routeEventsBoundRef.current = false;
       mapRef.current.setStyle(mapStyle);
       mapRef.current.once("load", () => {
         if (mapRef.current) syncLayers(mapRef.current);
       });
     } else if (layersReadyRef.current) {
-      syncLayers(mapRef.current);
+      const dataKey = `${routesDataKey}|${hazardsDataKey}|${endpointsKey}|${mapStyle}`;
+      if (dataKey !== lastDataSyncKeyRef.current) {
+        lastDataSyncKeyRef.current = dataKey;
+        syncLayers(mapRef.current);
+      } else {
+        updateRoutesSource(mapRef.current);
+        syncFacilityMarkers(mapRef.current);
+      }
     } else {
       mapRef.current.once("load", () => {
-        if (mapRef.current) syncLayers(mapRef.current);
+        if (mapRef.current) {
+          lastDataSyncKeyRef.current = `${routesDataKey}|${hazardsDataKey}|${endpointsKey}|${mapStyle}`;
+          syncLayers(mapRef.current);
+        }
       });
     }
-  }, [token, mapStyle, syncLayers]);
+  }, [
+    token,
+    mapStyle,
+    syncLayers,
+    routesDataKey,
+    hazardsDataKey,
+    endpointsKey,
+    updateRoutesSource,
+    syncFacilityMarkers,
+  ]);
 
   const focusRouteMeta = routes.find((r) => r.id === focusRouteId);
 
@@ -664,38 +637,38 @@ export function EmergencyRouteMap({
       )}
 
       {routes.length > 0 && (
-        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 max-w-[210px] pointer-events-none">
-          <div className="rounded-lg border border-border/60 bg-background/75 backdrop-blur-md px-3 py-2 text-[10px] shadow-sm space-y-1 pointer-events-auto">
-            <p className="font-semibold text-xs mb-1">Tap a route to switch</p>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-1 rounded-full bg-green-500" />
-              Green corridor
+        <div className="absolute top-3 left-3 z-10 pointer-events-none max-w-[200px]">
+          <div className="rounded-lg border border-border/60 bg-background/80 backdrop-blur-md px-2.5 py-2 text-[10px] shadow-sm pointer-events-auto">
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-0.5 rounded-full bg-green-500" />
+                Green
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-0.5 rounded-full bg-blue-500" />
+                Alternate
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500 ring-1 ring-orange-400" />
+                Hazard
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-1 rounded-full bg-blue-500" />
-              Fastest / alternate
-            </div>
-            <p className="font-semibold text-xs mt-2 mb-1">On the way</p>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-              Blood bank
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-teal-500" />
-              ICU / clinic
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-              Pharmacy
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-orange-400" />
-              Pothole
-            </div>
+            {showNearbyPotholes && mapPotholes.length > 0 && (
+              <p className="mt-1.5 text-[10px] text-muted-foreground border-t border-border/50 pt-1.5">
+                {mapPotholes.length} pothole
+                {mapPotholes.length !== 1 ? "s" : ""} within {NEARBY_POTHOLE_RADIUS_KM} km
+              </p>
+            )}
+            {showHealthcareStops && visibleFacilities.length > 0 && (
+              <p className="mt-1 text-[10px] text-muted-foreground border-t border-border/50 pt-1.5">
+                {visibleFacilities.length} healthcare stop
+                {visibleFacilities.length !== 1 ? "s" : ""}
+              </p>
+            )}
           </div>
           {focusRouteMeta && (
-            <p className="text-[10px] text-muted-foreground bg-background/70 backdrop-blur px-2 py-1 rounded-md border border-border/50">
-              Viewing: {focusRouteMeta.label}
+            <p className="mt-1 text-[10px] text-muted-foreground bg-background/75 backdrop-blur px-2 py-0.5 rounded border border-border/50 truncate">
+              {focusRouteMeta.label}
             </p>
           )}
         </div>

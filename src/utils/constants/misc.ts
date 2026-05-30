@@ -77,7 +77,7 @@ export const REVIEWS = [
     avatar: "https://randomuser.me/api/portraits/men/32.jpg",
     rating: 5,
     review:
-      "NammaMarg made it so easy to report garbage dumping near my apartment. Love the live map feature.",
+      "NammaMarga made it so easy to report garbage dumping near my apartment. Love the live map feature.",
   },
   {
     name: "Ananya Reddy",
@@ -133,7 +133,7 @@ export const REVIEWS = [
     avatar: "https://randomuser.me/api/portraits/women/50.jpg",
     rating: 5,
     review:
-      "NammaMarg is what Bangalore needed. Clean UI, fast reporting, and authorities actually respond.",
+      "NammaMarga is what Bangalore needed. Clean UI, fast reporting, and authorities actually respond.",
   },
 ] as const;
 

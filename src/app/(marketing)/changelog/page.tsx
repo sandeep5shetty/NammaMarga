@@ -31,7 +31,7 @@ const ChangeLogPage = () => {
           Changelog
         </h1>
         <p className="text-base md:text-lg mt-6 text-center text-muted-foreground">
-          What&apos;s new in NammaMarg for Bengaluru civic infrastructure.
+          What&apos;s new in NammaMarga for Bengaluru civic infrastructure.
         </p>
         <ul className="mt-12 space-y-8">
           {CHANGELOG.map((entry) => (

@@ -1,8 +1,12 @@
 import { getAuthUser } from "@/lib/auth/get-user";
 import { findNearestHospitals } from "@/lib/hospitals/nearest";
 import { getEmergencyRoutes } from "@/lib/routing/emergency-route";
+import {
+  EMERGENCY_VEHICLE_TYPE_VALUES,
+  normalizeVehicleType,
+} from "@/lib/routing/vehicle-profiles";
 import { db } from "@/lib/prisma";
-import type { EmergencyVehicleType } from "@prisma/client";
+import type { EmergencyVehicleType as PrismaEmergencyVehicleType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -14,7 +18,15 @@ const schema = z.object({
   hospitalId: z.string().optional(),
   sourceLabel: z.string().optional(),
   destLabel: z.string().optional(),
-  vehicleType: z.enum(["AMBULANCE", "FIRE_ENGINE", "PRIVATE_CAR", "TWO_WHEELER"]).optional(),
+  vehicleType: z
+    .enum([
+      ...EMERGENCY_VEHICLE_TYPE_VALUES,
+      "AMBULANCE",
+      "FIRE_ENGINE",
+      "PRIVATE_CAR",
+      "POLICE_VEHICLE",
+    ])
+    .optional(),
   includeHospitals: z.boolean().optional(),
 });
 
@@ -33,8 +45,10 @@ export async function POST(request: Request) {
       sourceLabel,
       destLabel,
       hospitalId,
-      vehicleType = "AMBULANCE",
+      vehicleType: rawVehicleType = "AMBULANCE_BLS",
     } = parsed.data;
+
+    const vehicleType = normalizeVehicleType(rawVehicleType);
 
     let destLat = parsed.data.destLat;
     let destLng = parsed.data.destLng;
@@ -58,7 +72,7 @@ export async function POST(request: Request) {
       { lat: sourceLat, lng: sourceLng, label: sourceLabel },
       { lat: destLat, lng: destLng, label: destinationLabel },
       {
-        vehicleType: vehicleType as EmergencyVehicleType,
+        vehicleType,
         excludeHospitalId: hospitalId,
       },
     );
@@ -73,25 +87,29 @@ export async function POST(request: Request) {
             latitude: sourceLat,
             longitude: sourceLng,
             routeSafetyScore: result.recommended.safetyScore,
-            vehicleType: vehicleType as EmergencyVehicleType,
+            vehicleType,
             limit: 5,
           })
         : [];
 
     if (user) {
-      await db.routeRequest.create({
-        data: {
-          requestedByUserId: user.id,
-          sourceLat,
-          sourceLng,
-          destLat,
-          destLng,
-          vehicleType: vehicleType as EmergencyVehicleType,
-          destinationHospitalId: hospitalId ?? null,
-          selectedRouteType: "safest",
-          result: { ...result, selectedHospital } as object,
-        },
-      });
+      try {
+        await db.routeRequest.create({
+          data: {
+            requestedByUserId: user.id,
+            sourceLat,
+            sourceLng,
+            destLat,
+            destLng,
+            vehicleType: vehicleType as PrismaEmergencyVehicleType,
+            destinationHospitalId: hospitalId ?? null,
+            selectedRouteType: "safest",
+            result: { ...result, selectedHospital } as object,
+          },
+        });
+      } catch (persistError) {
+        console.warn("[emergency-route] routeRequest persist skipped:", persistError);
+      }
     }
 
     return NextResponse.json({

@@ -1,9 +1,9 @@
 export const FAQ = [
   {
     id: "item-1",
-    question: "What is NammaMarg?",
+    question: "What is NammaMarga?",
     answer:
-      "NammaMarg is a civic road intelligence platform for Bengaluru. Citizens report potholes and other issues with AI, BBMP tracks resolution, and emergency routing helps ambulances avoid damaged roads.",
+      "NammaMarga is a civic road intelligence platform for Bengaluru. Citizens report potholes and other issues with AI, BBMP tracks resolution, and emergency routing helps ambulances avoid damaged roads.",
   },
   {
     id: "item-2",
@@ -43,7 +43,7 @@ export const FAQ = [
   },
   {
     id: "item-8",
-    question: "Which areas does NammaMarg cover?",
+    question: "Which areas does NammaMarga cover?",
     answer:
       "The demo is focused on Bengaluru with ward-level data, seeded potholes, hospitals, and road health segments. The map and routing are optimized for the city.",
   },

@@ -1,8 +1,18 @@
 import { findNearestHospitals } from "@/lib/hospitals/nearest";
-import type { EmergencyVehicleType } from "@prisma/client";
+import {
+  AMBULANCE_VEHICLE_TYPES,
+  normalizeVehicleType,
+} from "@/lib/routing/vehicle-profiles";
+import type { EmergencyVehicleType } from "@/types/emergency";
 import { NextResponse } from "next/server";
 
-const VEHICLES = new Set(["AMBULANCE", "FIRE_ENGINE", "PRIVATE_CAR", "TWO_WHEELER"]);
+const VEHICLES = new Set<string>([
+  ...AMBULANCE_VEHICLE_TYPES,
+  "AMBULANCE",
+  "FIRE_ENGINE",
+  "PRIVATE_CAR",
+  "POLICE_VEHICLE",
+]);
 
 export async function GET(request: Request) {
   try {
@@ -12,9 +22,9 @@ export async function GET(request: Request) {
     const icu = searchParams.get("icu") === "true";
     const limit = Math.min(Number(searchParams.get("limit") ?? 8), 24);
     const vehicleParam = searchParams.get("vehicle");
-    const vehicleType =
+    const vehicleType: EmergencyVehicleType | undefined =
       vehicleParam && VEHICLES.has(vehicleParam)
-        ? (vehicleParam as EmergencyVehicleType)
+        ? normalizeVehicleType(vehicleParam)
         : undefined;
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {

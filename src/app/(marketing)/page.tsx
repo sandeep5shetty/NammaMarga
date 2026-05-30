@@ -53,7 +53,10 @@ const HomePage = async () => {
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 z-50">
                             <Button asChild size="lg" className="shadow-md shadow-emerald-900/10 dark:shadow-lg dark:shadow-black/20 w-full sm:w-auto">
-                                <Link href={user ? "/dashboard" : "/auth/sign-in"} className="flex items-center justify-center">
+                                <Link
+                                    href={user ? "/report" : "/auth/sign-in?next=/report"}
+                                    className="flex items-center justify-center"
+                                >
                                     Report an issue
                                     <ArrowRightIcon className="w-4 h-4 ml-2" />
                                 </Link>
@@ -101,7 +104,7 @@ const HomePage = async () => {
                             Civic Infrastructure, Reimagined
                         </h2>
                         <p className="mt-4 text-center lg:text-center text-lg text-muted-foreground max-w-lg">
-                            NammaMarg combines citizen reporting, AI classification, and BBMP analytics into one powerful platform.
+                            NammaMarga combines citizen reporting, AI classification, and BBMP analytics into one powerful platform.
                         </p>
                     </div>
                 </AnimationContainer>
@@ -160,7 +163,7 @@ const HomePage = async () => {
                             What Bangalore citizens are saying
                         </h2>
                         <p className="mt-4 text-center lg:text-center text-lg text-muted-foreground max-w-lg">
-                            Real stories from citizens using NammaMarg to improve their neighborhoods.
+                            Real stories from citizens using NammaMarga to improve their neighborhoods.
                         </p>
                     </div>
                 </AnimationContainer>
@@ -265,7 +268,7 @@ const HomePage = async () => {
                             </p>
                             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                                 <Button asChild>
-                                    <Link href="/report">
+                                    <Link href={user ? "/report" : "/auth/sign-in?next=/report"}>
                                         Report an issue
                                         <ArrowRightIcon className="w-4 h-4 ml-2" />
                                     </Link>

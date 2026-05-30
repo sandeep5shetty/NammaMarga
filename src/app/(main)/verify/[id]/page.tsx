@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ISSUE_TYPE_LABELS } from "@/types/civic";
 import { Camera, Loader2, MapPin, ShieldCheck } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -70,7 +71,13 @@ export default function VerifyPage() {
   if (!issue) return <p className="text-muted-foreground p-8">Loading...</p>;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 p-4">
+    <div className="max-w-2xl mx-auto space-y-6">
+      <Link
+        href="/dashboard/verify"
+        className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+      >
+        ← Back to Verify Fixes
+      </Link>
       <div>
         <h1 className="text-2xl font-bold font-heading flex items-center gap-2">
           <ShieldCheck className="h-6 w-6 text-primary" />
@@ -155,8 +162,8 @@ export default function VerifyPage() {
         Submit Verification
       </Button>
       {result && (
-        <Button variant="outline" className="w-full" onClick={() => router.push("/dashboard")}>
-          Back to Dashboard
+        <Button variant="outline" className="w-full" onClick={() => router.push("/dashboard/verify")}>
+          Back to Verify Fixes
         </Button>
       )}
     </div>

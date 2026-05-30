@@ -1,7 +1,12 @@
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
-import { estimateEtaMinutes } from "@/lib/routing/vehicle-profiles";
-import type { EmergencyVehicleType, HealthFacilityKind } from "@prisma/client";
+import {
+  estimateEtaMinutes,
+  isAmbulanceVehicle,
+  normalizeVehicleType,
+} from "@/lib/routing/vehicle-profiles";
+import type { HealthFacilityKind } from "@prisma/client";
+import type { EmergencyVehicleType } from "@/types/emergency";
 
 export type HospitalResult = {
   id: string;
@@ -40,12 +45,18 @@ export function scoreHospital(params: {
   else if (params.kind === "HOSPITAL") capabilityScore += 15;
   else if (params.kind === "FIRST_AID") capabilityScore += 10;
 
-  const vehicle = params.vehicleType ?? "AMBULANCE";
-  if (vehicle === "AMBULANCE" && params.kind === "FIRST_AID") {
+  const vehicle = normalizeVehicleType(params.vehicleType);
+  if (isAmbulanceVehicle(vehicle) && params.kind === "FIRST_AID") {
     capabilityScore *= 0.85;
   }
-  if (vehicle === "AMBULANCE" && params.kind === "TRAUMA_CENTER") {
+  if (isAmbulanceVehicle(vehicle) && params.kind === "TRAUMA_CENTER") {
     capabilityScore *= 1.15;
+  }
+  if (vehicle === "AMBULANCE_ICU" && params.hasIcu) {
+    capabilityScore *= 1.12;
+  }
+  if (vehicle === "AMBULANCE_NEONATAL" && params.kind === "HOSPITAL") {
+    capabilityScore *= 1.08;
   }
 
   const safety = params.routeSafetyScore ?? 70;
@@ -70,7 +81,7 @@ export async function findNearestHospitals(params: {
     where: params.icuOnly ? { hasIcu: true } : undefined,
   });
 
-  const vehicle = params.vehicleType ?? "AMBULANCE";
+  const vehicle = normalizeVehicleType(params.vehicleType);
 
   const ranked = hospitals
     .map((h) => {

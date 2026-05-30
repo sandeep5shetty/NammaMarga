@@ -1,5 +1,6 @@
 "use client";
 
+import { IssueUpvoteButton } from "@/components/civic/issue-upvote-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,14 +14,38 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ISSUE_TYPE_LABELS } from "@/types/civic";
+import { ISSUE_TYPE_LABELS, STATUS_LABELS } from "@/types/civic";
 import type { IssueClassification } from "@/types/civic";
 import { findNearestWard } from "@/utils/constants/wards";
-import { Camera, Loader2, MapPin, Sparkles, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  Camera,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  Sparkles,
+  Upload,
+} from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+
+type DuplicateCheckResult = {
+  isDuplicate: boolean;
+  duplicate: {
+    id: string;
+    title: string;
+    typeLabel: string;
+    status: keyof typeof STATUS_LABELS;
+    reportCount: number;
+    voteCount: number;
+    distanceMeters: number;
+    matchRadiusMeters: number;
+  } | null;
+  recommendation: string;
+};
 
 export default function ReportPage() {
   const router = useRouter();
@@ -40,7 +65,8 @@ export default function ReportPage() {
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-
+  const [duplicateCheck, setDuplicateCheck] = useState<DuplicateCheckResult | null>(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   useEffect(() => {
     fetch("/api/wards")
       .then((r) => r.json())
@@ -69,7 +95,40 @@ export default function ReportPage() {
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
     setClassification(null);
+    setDuplicateCheck(null);
   }, []);
+
+  const runDuplicateCheck = useCallback(async () => {
+    if (!classification || latitude == null || longitude == null) {
+      setDuplicateCheck(null);
+      return;
+    }
+
+    setIsCheckingDuplicate(true);
+    try {
+      const res = await fetch("/api/duplicate-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude,
+          longitude,
+          type: classification.type,
+          wardId: wardId || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Duplicate check failed");
+      setDuplicateCheck(json.data);
+    } catch {
+      setDuplicateCheck(null);
+    } finally {
+      setIsCheckingDuplicate(false);
+    }
+  }, [classification, latitude, longitude, wardId]);
+
+  useEffect(() => {
+    void runDuplicateCheck();
+  }, [runDuplicateCheck]);
 
   const startCamera = async () => {
     try {
@@ -136,6 +195,7 @@ export default function ReportPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setClassification(json.data);
+      setDuplicateCheck(null);
       toast.success("AI classification complete");
       (window as unknown as { _uploadedUrl?: string })._uploadedUrl = imageUrl;
     } catch (e) {
@@ -145,7 +205,7 @@ export default function ReportPage() {
     }
   };
 
-  const handleSubmit = async () => {
+  const submitReport = async () => {
     if (!classification || latitude == null || longitude == null) {
       toast.error("Complete AI classification and enable location first");
       return;
@@ -166,7 +226,7 @@ export default function ReportPage() {
           severity: classification.severity,
           confidence: classification.confidence,
           aiSummary: classification.summary,
-          imageUrl,
+          imageUrl: imageUrl ?? "",
           latitude,
           longitude,
           address,
@@ -177,12 +237,8 @@ export default function ReportPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
 
-      if (json.merged) {
-        toast.info("Merged with nearby existing report");
-      } else {
-        toast.success("Issue reported successfully!");
-      }
-      router.push("/dashboard");
+      toast.success("Issue reported successfully!");
+      router.push(`/dashboard/reports/${json.data.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to submit");
     } finally {
@@ -323,18 +379,83 @@ export default function ReportPage() {
               <p className="text-xs text-muted-foreground italic">{classification.reasoning}</p>
             </div>
           )}
+
+          {isCheckingDuplicate && classification && (
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking for nearby duplicate reports…
+            </p>
+          )}
+
+          {duplicateCheck?.isDuplicate && duplicateCheck.duplicate && (
+            <Card className="border-amber-500/50 bg-amber-500/5">
+              <CardContent className="pt-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">Similar issue already reported</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {duplicateCheck.recommendation}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-md border border-border bg-background p-3 space-y-2">
+                  <p className="font-medium text-sm">{duplicateCheck.duplicate.title}</p>
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>{duplicateCheck.duplicate.typeLabel}</span>
+                    <span>·</span>
+                    <span>
+                      {STATUS_LABELS[duplicateCheck.duplicate.status] ??
+                        duplicateCheck.duplicate.status}
+                    </span>
+                    <span>·</span>
+                    <span>{duplicateCheck.duplicate.distanceMeters}m away</span>
+                    <span>·</span>
+                    <span>
+                      {Math.max(
+                        duplicateCheck.duplicate.voteCount,
+                        duplicateCheck.duplicate.reportCount,
+                      )}{" "}
+                      confirmation(s)
+                    </span>
+                  </div>
+                  <Link
+                    href={`/dashboard/reports/${duplicateCheck.duplicate.id}`}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    View existing report
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
+                <IssueUpvoteButton
+                  issueId={duplicateCheck.duplicate.id}
+                  initialCount={Math.max(
+                    duplicateCheck.duplicate.voteCount,
+                    duplicateCheck.duplicate.reportCount,
+                  )}
+                  size="default"
+                  className="w-full justify-center"
+                  onVoted={() =>
+                    router.push(`/dashboard/reports/${duplicateCheck.duplicate!.id}`)
+                  }
+                />
+              </CardContent>
+            </Card>
+          )}
         </CardContent>
       </Card>
 
-      <Button
-        size="lg"
-        className="w-full"
-        onClick={handleSubmit}
-        disabled={!classification || isSubmitting}
-      >
-        {isSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-        Submit Report
-      </Button>
+      {!duplicateCheck?.isDuplicate && (
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={() => void submitReport()}
+          disabled={!classification || isSubmitting || isCheckingDuplicate}
+        >
+          {isSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+          Submit Report
+        </Button>
+      )}
     </div>
   );
 }

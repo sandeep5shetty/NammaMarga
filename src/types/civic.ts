@@ -89,3 +89,45 @@ export const STATUS_LABELS: Record<IssueStatus, string> = {
   REJECTED: "Rejected",
   MERGED: "Merged",
 };
+
+/** Citizen-facing status colors (light + dark friendly). */
+export const STATUS_COLORS: Record<
+  IssueStatus,
+  { bg: string; text: string; border: string }
+> = {
+  REPORTED: {
+    bg: "bg-slate-500/10",
+    text: "text-slate-700 dark:text-slate-300",
+    border: "border-slate-500/30",
+  },
+  ACKNOWLEDGED: {
+    bg: "bg-sky-500/10",
+    text: "text-sky-800 dark:text-sky-300",
+    border: "border-sky-500/30",
+  },
+  IN_PROGRESS: {
+    bg: "bg-amber-500/10",
+    text: "text-amber-800 dark:text-amber-300",
+    border: "border-amber-500/30",
+  },
+  RESOLVED: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-800 dark:text-emerald-300",
+    border: "border-emerald-500/30",
+  },
+  VERIFIED: {
+    bg: "bg-emerald-600/15",
+    text: "text-emerald-900 dark:text-emerald-200",
+    border: "border-emerald-600/40",
+  },
+  REJECTED: {
+    bg: "bg-red-500/10",
+    text: "text-red-800 dark:text-red-300",
+    border: "border-red-500/30",
+  },
+  MERGED: {
+    bg: "bg-violet-500/10",
+    text: "text-violet-800 dark:text-violet-300",
+    border: "border-violet-500/30",
+  },
+};

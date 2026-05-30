@@ -43,7 +43,12 @@ const SignInForm = () => {
         return;
       }
 
-      router.push("/auth/auth-callback");
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next");
+      const callbackUrl = next
+        ? `/auth/auth-callback?next=${encodeURIComponent(next)}`
+        : "/auth/auth-callback";
+      router.push(callbackUrl);
     } catch {
       toast.error("An error occurred. Please try again");
     } finally {
@@ -53,7 +58,7 @@ const SignInForm = () => {
 
   return (
     <div className="flex flex-col items-start gap-y-6 py-8 w-full px-0.5">
-      <h2 className="text-2xl font-semibold">Sign in to NammaMarg</h2>
+      <h2 className="text-2xl font-semibold">Sign in to NammaMarga</h2>
 
       <form onSubmit={handleSignIn} className="w-full">
         <div className="space-y-2 w-full">

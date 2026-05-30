@@ -1,5 +1,5 @@
 {
-  "name": "NammaMarg",
+  "name": "NammaMarga",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,7 +11,8 @@
     "db:generate": "dotenv -e .env.local -- prisma generate",
     "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
     "db:push": "dotenv -e .env.local -- prisma db push",
-    "db:seed": "dotenv -e .env.local -- npx tsx prisma/seed.ts"
+    "db:seed": "dotenv -e .env.local -- npx tsx prisma/seed.ts",
+    "db:push:force": "dotenv -e .env.local -- prisma db push --accept-data-loss"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

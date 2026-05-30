@@ -2,11 +2,19 @@
 
 import { getAuthStatus } from "@/actions";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+
+function safeNextPath(next: string | null): string {
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    return next;
+  }
+  return "/dashboard";
+}
 
 const AuthCallbackPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const { data } = useQuery({
     queryKey: ["auth-status"],
@@ -17,11 +25,15 @@ const AuthCallbackPage = () => {
 
   useEffect(() => {
     if (data?.success) {
-      router.push("/dashboard");
+      router.push(safeNextPath(searchParams.get("next")));
     } else if (data?.error) {
-      router.push("/auth/sign-in");
+      const next = searchParams.get("next");
+      const signInUrl = next
+        ? `/auth/sign-in?next=${encodeURIComponent(next)}`
+        : "/auth/sign-in";
+      router.push(signInUrl);
     }
-  }, [data, router]);
+  }, [data, router, searchParams]);
 
   return (
     <div className="flex items-center justify-center flex-col h-screen relative">

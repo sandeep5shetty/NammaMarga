@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  RouteGoogleMapsCTA,
+  type RouteNavigationEndpoints,
+} from "@/components/routing/green-corridor-google-maps-cta";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -23,6 +27,7 @@ type RouteComparisonPanelProps = {
   recommended: RouteAnalysis;
   selectedRouteId: string | null;
   onSelectRoute: (route: RouteAnalysis) => void;
+  navigation: RouteNavigationEndpoints;
   compact?: boolean;
 };
 
@@ -49,11 +54,35 @@ function buildRejectionSummary(alt: RouteAnalysis, rec: RouteAnalysis): string {
   return `${parts.join(" · ")} than the green corridor.`;
 }
 
+function RouteMapsButton({
+  route,
+  navigation,
+  routeLabel,
+  className,
+}: {
+  route: RouteAnalysis;
+  navigation: RouteNavigationEndpoints;
+  routeLabel: string;
+  className?: string;
+}) {
+  return (
+    <RouteGoogleMapsCTA
+      route={route}
+      origin={navigation.origin}
+      destination={navigation.destination}
+      routeLabel={routeLabel}
+      compact
+      className={cn("shrink-0 w-auto min-w-[7.5rem] px-2.5 py-1.5 text-[11px]", className)}
+    />
+  );
+}
+
 export function RouteComparisonPanel({
   routes,
   recommended,
   selectedRouteId,
   onSelectRoute,
+  navigation,
   compact,
 }: RouteComparisonPanelProps) {
   const [reasonsOpen, setReasonsOpen] = useState(false);
@@ -79,30 +108,38 @@ export function RouteComparisonPanel({
         {routes.map((r) => {
           const selected = r.id === activeId;
           const color = getRouteColor(r);
+          const label = routeShortLabel(r);
           return (
-            <button
+            <div
               key={r.id}
-              type="button"
-              onClick={() => onSelectRoute(r)}
               className={cn(
-                "shrink-0 flex flex-col items-start gap-1 rounded-lg border px-3 py-2 min-w-[108px] text-left transition-all",
+                "shrink-0 flex items-stretch rounded-lg border min-w-[168px] overflow-hidden transition-all",
                 selected
                   ? "border-foreground/25 bg-background shadow-sm ring-2 ring-offset-1 ring-offset-card"
                   : "border-border/70 bg-muted/30 hover:bg-muted/50 hover:border-border",
               )}
-              style={selected ? { ringColor: `${color}99` } : undefined}
+              style={selected ? { boxShadow: `0 0 0 2px ${color}55` } : undefined}
             >
-              <span className="flex items-center gap-1.5 w-full">
-                <span
-                  className="h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="text-xs font-semibold truncate">{routeShortLabel(r)}</span>
-              </span>
-              <span className="text-[11px] text-muted-foreground pl-3.5">
-                ~{Math.round(r.durationMinutes)} min · {r.distanceKm.toFixed(1)} km
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onSelectRoute(r)}
+                className="flex flex-col items-start gap-1 px-3 py-2 text-left flex-1 min-w-0"
+              >
+                <span className="flex items-center gap-1.5 w-full">
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="text-xs font-semibold truncate">{label}</span>
+                </span>
+                <span className="text-[11px] text-muted-foreground pl-3.5">
+                  ~{Math.round(r.durationMinutes)} min · {r.distanceKm.toFixed(1)} km
+                </span>
+              </button>
+              <div className="flex items-center pr-1.5 shrink-0">
+                <RouteMapsButton route={r} navigation={navigation} routeLabel={label} />
+              </div>
+            </div>
           );
         })}
       </div>
@@ -116,7 +153,7 @@ export function RouteComparisonPanel({
         )}
       >
         <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {isGreen ? (
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-600 text-white shrink-0">
                 <Shield className="h-4 w-4" />
@@ -136,12 +173,19 @@ export function RouteComparisonPanel({
               </p>
             </div>
           </div>
-          {isGreen && recommended.isFastest && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-600/15 text-green-700 dark:text-green-400 px-2 py-0.5 text-[10px] font-medium border border-green-500/25">
-              <Zap className="h-3 w-3" />
-              Also fastest
-            </span>
-          )}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {isGreen && recommended.isFastest && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-600/15 text-green-700 dark:text-green-400 px-2 py-0.5 text-[10px] font-medium border border-green-500/25">
+                <Zap className="h-3 w-3" />
+                Also fastest
+              </span>
+            )}
+            <RouteMapsButton
+              route={active}
+              navigation={navigation}
+              routeLabel={routeShortLabel(active)}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-4 gap-2">
@@ -207,40 +251,51 @@ export function RouteComparisonPanel({
           <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5 text-xs font-medium hover:bg-muted/40 transition-colors">
             <span>Other routes ({alternates.length})</span>
             <ChevronDown
-              className={cn("h-4 w-4 text-muted-foreground transition-transform", alternatesOpen && "rotate-180")}
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition-transform",
+                alternatesOpen && "rotate-180",
+              )}
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-1.5">
-            {alternates.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => onSelectRoute(r)}
-                className={cn(
-                  "w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
-                  r.id === activeId
-                    ? "border-border bg-background shadow-sm"
-                    : "border-transparent bg-muted/20 hover:bg-muted/40",
-                )}
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: getRouteColor(r) }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">{routeShortLabel(r)}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    ~{Math.round(r.durationMinutes)} min · {r.potholeCount} potholes · Safety{" "}
-                    {r.safetyScore}
-                  </p>
+            {alternates.map((r) => {
+              const label = routeShortLabel(r);
+              return (
+                <div
+                  key={r.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-2 py-2 transition-colors",
+                    r.id === activeId
+                      ? "border-border bg-background shadow-sm"
+                      : "border-transparent bg-muted/20 hover:bg-muted/40",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSelectRoute(r)}
+                    className="flex flex-1 items-center gap-3 min-w-0 text-left py-0.5"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: getRouteColor(r) }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{label}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        ~{Math.round(r.durationMinutes)} min · {r.potholeCount} potholes · Safety{" "}
+                        {r.safetyScore}
+                      </p>
+                    </div>
+                    {r.isFastest && (
+                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium shrink-0">
+                        Fastest
+                      </span>
+                    )}
+                  </button>
+                  <RouteMapsButton route={r} navigation={navigation} routeLabel={label} />
                 </div>
-                {r.isFastest && (
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium shrink-0">
-                    Fastest
-                  </span>
-                )}
-              </button>
-            ))}
+              );
+            })}
           </CollapsibleContent>
         </Collapsible>
       )}

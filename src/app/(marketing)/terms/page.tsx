@@ -10,13 +10,13 @@ const TermsPage = () => {
           <p className="text-muted-foreground text-sm">Last updated: {new Date().toLocaleDateString("en-IN")}</p>
 
           <p className="text-muted-foreground leading-relaxed mt-6">
-            Welcome to <strong>NammaMarg</strong>. These terms govern your use of our website and civic
-            infrastructure services for Bengaluru. By using NammaMarg, you agree to these terms.
+            Welcome to <strong>NammaMarga</strong>. These terms govern your use of our website and civic
+            infrastructure services for Bengaluru. By using NammaMarga, you agree to these terms.
           </p>
 
           <h2 className="text-xl font-semibold mt-8">Use of the platform</h2>
           <p className="text-muted-foreground">
-            NammaMarg enables citizens to report road and civic issues, view maps and analytics, verify
+            NammaMarga enables citizens to report road and civic issues, view maps and analytics, verify
             fixes, and plan emergency routes. BBMP and authorized officials may manage issue workflows
             through a separate console.
           </p>
@@ -31,7 +31,7 @@ const TermsPage = () => {
 
           <h2 className="text-xl font-semibold mt-8">Issue reports & content</h2>
           <p className="text-muted-foreground">
-            You retain ownership of photos and descriptions you submit. You grant NammaMarg a license
+            You retain ownership of photos and descriptions you submit. You grant NammaMarga a license
             to display, analyze, and share reports with the public and municipal partners for civic
             resolution purposes.
           </p>
@@ -54,7 +54,7 @@ const TermsPage = () => {
 
           <h2 className="text-xl font-semibold mt-8">Disclaimer</h2>
           <p className="text-muted-foreground">
-            NammaMarg is provided &quot;as is&quot;. We do not guarantee uninterrupted service, perfect AI
+            NammaMarga is provided &quot;as is&quot;. We do not guarantee uninterrupted service, perfect AI
             accuracy, or that all reported issues will be resolved by authorities.
           </p>
 

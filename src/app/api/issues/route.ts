@@ -23,6 +23,8 @@ const createIssueSchema = z.object({
   longitude: z.number(),
   address: z.string().optional(),
   wardId: z.string().optional(),
+  /** When true, skip duplicate merge and create a new issue (user override). */
+  forceNew: z.boolean().optional(),
 });
 
 export async function GET(request: Request) {
@@ -45,6 +47,7 @@ export async function GET(request: Request) {
       include: {
         ward: { select: { name: true, number: true } },
         reporter: { select: { name: true, image: true } },
+        contractor: { select: { name: true, company: true } },
       },
       orderBy: [{ priorityScore: "desc" }, { createdAt: "desc" }],
       take: limit,
@@ -76,25 +79,37 @@ export async function POST(request: Request) {
       );
     }
 
-    const duplicate = await findDuplicateIssue({
-      latitude: parsed.data.latitude,
-      longitude: parsed.data.longitude,
-      type: parsed.data.type,
-    });
-
-    if (duplicate) {
-      const merged = await mergeIntoExistingIssue(duplicate.issue.id, user.id);
-      await notifyIssueUpdate(
-        user.id,
-        merged.id,
-        "Duplicate report merged",
-        `Your report was merged with an existing ${parsed.data.type} issue nearby (${Math.round(duplicate.distanceMeters)}m away).`,
-      );
-      return NextResponse.json({
-        data: merged,
-        merged: true,
-        distanceMeters: duplicate.distanceMeters,
+    if (!parsed.data.forceNew) {
+      const duplicate = await findDuplicateIssue({
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        type: parsed.data.type,
+        wardId: parsed.data.wardId,
       });
+
+      if (duplicate) {
+        const mergeResult = await mergeIntoExistingIssue(duplicate.issue.id, user.id, {
+          severityConfirmation: parsed.data.severity,
+        });
+
+        const message = mergeResult.alreadyReported
+          ? "You already added your report to this nearby issue."
+          : `Your report was merged with an existing ${parsed.data.type} issue nearby (${Math.round(duplicate.distanceMeters)}m away).`;
+
+        await notifyIssueUpdate(
+          user.id,
+          mergeResult.issue.id,
+          mergeResult.alreadyReported ? "Already reported" : "Duplicate report merged",
+          message,
+        );
+
+        return NextResponse.json({
+          data: mergeResult.issue,
+          merged: true,
+          alreadyReported: mergeResult.alreadyReported,
+          distanceMeters: duplicate.distanceMeters,
+        });
+      }
     }
 
     const issue = await enrichAndCreateIssue({

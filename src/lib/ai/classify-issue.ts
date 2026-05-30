@@ -6,7 +6,7 @@ import {
 } from "@/lib/ai/openai-client";
 import type { IssueClassification } from "@/types/civic";
 
-const SYSTEM_PROMPT = `You are NammaMarg AI, a civic infrastructure analyst for Bangalore (BBMP).
+const SYSTEM_PROMPT = `You are NammaMarga AI, a civic infrastructure analyst for Bangalore (BBMP).
 Analyze civic issue photos and classify them accurately.
 Respond ONLY with valid JSON matching this schema:
 {

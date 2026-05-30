@@ -1,6 +1,8 @@
-import type { EmergencyVehicleType, HealthFacilityKind } from "@prisma/client";
+import type { HealthFacilityKind } from "@prisma/client";
+import type { AmbulanceVehicleType } from "@/lib/routing/vehicle-profiles";
 
-export type { EmergencyVehicleType, HealthFacilityKind };
+export type { HealthFacilityKind };
+export type EmergencyVehicleType = AmbulanceVehicleType;
 
 export const FACILITY_KIND_LABELS: Record<HealthFacilityKind, string> = {
   HOSPITAL: "Hospital",

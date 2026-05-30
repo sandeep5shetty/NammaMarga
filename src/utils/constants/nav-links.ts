@@ -55,14 +55,14 @@ export const NAV_LINKS = [
     href: "/resources",
     menu: [
       {
-        title: "Help Center",
-        tagline: "Learn how to report and track civic issues.",
+        title: "Contact BBMP",
+        tagline: "Official helpline, WhatsApp, and zonal control room numbers.",
         href: "/resources/help",
         icon: UsersIcon,
       },
       {
         title: "Changelog",
-        tagline: "Latest updates to the NammaMarg platform.",
+        tagline: "Latest updates to the NammaMarga platform.",
         href: "/changelog",
         icon: SparklesIcon,
       },

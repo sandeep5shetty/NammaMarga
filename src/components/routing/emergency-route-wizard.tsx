@@ -1,6 +1,7 @@
 "use client";
 
 import { EmergencyRouteMap } from "@/components/routing/emergency-route-map";
+import { HealthcareStopsPanel } from "@/components/routing/healthcare-stops-panel";
 import { PlaceSearch, type PlaceSelection } from "@/components/routing/place-search";
 import { RouteComparisonPanel } from "@/components/routing/route-comparison-panel";
 import {
@@ -17,9 +18,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import type { HospitalResult } from "@/lib/hospitals/nearest";
-import type { AlongRouteFacility } from "@/lib/hospitals/along-route";
+import {
+  filterFacilitiesForRoute,
+  type AlongRouteFacility,
+} from "@/lib/hospitals/along-route";
+import { NEARBY_POTHOLE_RADIUS_KM } from "@/lib/routing/nearby-route-potholes";
 import type {
   CivicDataSummary,
   CorridorHazard,
@@ -27,15 +34,14 @@ import type {
 } from "@/lib/routing/emergency-route";
 import { VEHICLE_OPTIONS } from "@/lib/routing/vehicle-profiles";
 import { FACILITY_KIND_COLORS, FACILITY_KIND_LABELS } from "@/types/emergency";
-import type { EmergencyVehicleType } from "@prisma/client";
+import type { EmergencyVehicleType } from "@/types/emergency";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Ambulance,
-  Bike,
-  Car,
+  Baby,
   ChevronLeft,
   ChevronRight,
-  Flame,
+  HeartPulse,
   Hospital,
   LocateFixed,
   MapPin,
@@ -44,6 +50,7 @@ import {
   Phone,
   Route,
   Shield,
+  Stethoscope,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -77,11 +84,11 @@ const slide = {
 };
 
 function VehicleIcon({ type }: { type: EmergencyVehicleType }) {
-  const cls = "h-5 w-5";
-  if (type === "AMBULANCE") return <Ambulance className={cls} />;
-  if (type === "FIRE_ENGINE") return <Flame className={cls} />;
-  if (type === "TWO_WHEELER") return <Bike className={cls} />;
-  return <Car className={cls} />;
+  const cls = "h-5 w-5 text-red-600";
+  if (type === "AMBULANCE_ALS") return <Stethoscope className={cls} />;
+  if (type === "AMBULANCE_ICU") return <HeartPulse className={cls} />;
+  if (type === "AMBULANCE_NEONATAL") return <Baby className={cls} />;
+  return <Ambulance className={cls} />;
 }
 
 export type EmergencyWizardResult = {
@@ -110,7 +117,7 @@ export function EmergencyRouteWizard({
 }: EmergencyRouteWizardProps) {
   const [step, setStep] = useState(1);
   const [source, setSource] = useState<PlaceSelection | null>(null);
-  const [vehicleType, setVehicleType] = useState<EmergencyVehicleType>("AMBULANCE");
+  const [vehicleType, setVehicleType] = useState<EmergencyVehicleType>("AMBULANCE_BLS");
   const [locating, setLocating] = useState(false);
   const [facilities, setFacilities] = useState<HospitalResult[]>([]);
   const [loadingFacilities, setLoadingFacilities] = useState(false);
@@ -122,13 +129,16 @@ export function EmergencyRouteWizard({
   const [alongRouteFacilities, setAlongRouteFacilities] = useState<AlongRouteFacility[]>([]);
   const [civicData, setCivicData] = useState<CivicDataSummary | null>(null);
   const [focusRouteId, setFocusRouteId] = useState<string | null>(null);
+  const [highlightFacilityId, setHighlightFacilityId] = useState<string | null>(null);
+  const [showNearbyPotholes, setShowNearbyPotholes] = useState(true);
+  const [showHealthcare, setShowHealthcare] = useState(true);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const mapWrapperRef = useRef<HTMLDivElement>(null);
 
   const reset = useCallback(() => {
     setStep(1);
     setSource(null);
-    setVehicleType("AMBULANCE");
+    setVehicleType("AMBULANCE_BLS");
     setFacilities([]);
     setSelectedFacility(null);
     setRecommended(null);
@@ -137,8 +147,17 @@ export function EmergencyRouteWizard({
     setAlongRouteFacilities([]);
     setCivicData(null);
     setFocusRouteId(null);
+    setHighlightFacilityId(null);
+    setShowNearbyPotholes(true);
+    setShowHealthcare(true);
     setMapFullscreen(false);
   }, []);
+
+  const activeRouteId = focusRouteId ?? recommended?.id ?? null;
+  const routeHealthcareStops = filterFacilitiesForRoute(
+    alongRouteFacilities,
+    activeRouteId,
+  );
 
   const toggleMapFullscreen = async () => {
     const el = mapWrapperRef.current;
@@ -327,7 +346,7 @@ export function EmergencyRouteWizard({
                   </div>
 
                   <div>
-                    <p className="text-sm font-medium mb-3">Vehicle type</p>
+                    <p className="text-sm font-medium mb-3">Ambulance type</p>
                     <div className="grid grid-cols-2 gap-2">
                       {VEHICLE_OPTIONS.map((v) => (
                         <button
@@ -450,19 +469,28 @@ export function EmergencyRouteWizard({
                     </div>
                   ) : (
                     <>
-                      {selectedFacility && (
-                        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 text-sm">
-                          <Hospital className="h-4 w-4 mt-0.5 shrink-0" />
-                          <div>
-                            <p className="font-medium">To {selectedFacility.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {VEHICLE_OPTIONS.find((v) => v.type === vehicleType)?.label} ·{" "}
-                              {recommended.distanceKm.toFixed(1)} km · ~
-                              {Math.round(recommended.durationMinutes)} min
-                            </p>
-                          </div>
+                      <div className="flex flex-wrap items-center gap-4 py-1">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="wiz-potholes"
+                            checked={showNearbyPotholes}
+                            onCheckedChange={setShowNearbyPotholes}
+                          />
+                          <Label htmlFor="wiz-potholes" className="text-xs">
+                            Nearby potholes ({NEARBY_POTHOLE_RADIUS_KM} km)
+                          </Label>
                         </div>
-                      )}
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="wiz-health"
+                            checked={showHealthcare}
+                            onCheckedChange={setShowHealthcare}
+                          />
+                          <Label htmlFor="wiz-health" className="text-xs">
+                            Healthcare stops
+                          </Label>
+                        </div>
+                      </div>
 
                       <div
                         ref={mapWrapperRef}
@@ -499,9 +527,15 @@ export function EmergencyRouteWizard({
                                 }
                               : null
                           }
-                          focusRouteId={focusRouteId ?? recommended.id}
-                          onSelectRoute={(id) => setFocusRouteId(id)}
-                          showHeatmap
+                          focusRouteId={activeRouteId}
+                          onSelectRoute={(id) => {
+                            setFocusRouteId(id);
+                            setHighlightFacilityId(null);
+                          }}
+                          highlightFacilityId={highlightFacilityId}
+                          onFacilitySelect={(f) => setHighlightFacilityId(f.id)}
+                          showNearbyPotholes={showNearbyPotholes}
+                          showHealthcareStops={showHealthcare}
                           comparisonMode
                         />
                         {!mapFullscreen && (
@@ -518,22 +552,36 @@ export function EmergencyRouteWizard({
                         )}
                       </div>
 
-                      {alongRouteFacilities.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          {alongRouteFacilities.filter((f) =>
-                            f.routeIds.includes(focusRouteId ?? recommended.id),
-                          ).length}{" "}
-                          healthcare stops along this route (blood banks, ICU, pharmacies). Tap
-                          markers on the map for details.
-                        </p>
+                      {showHealthcare && (
+                        <HealthcareStopsPanel
+                          compact
+                          facilities={routeHealthcareStops}
+                          selectedId={highlightFacilityId}
+                          onSelect={(f) => setHighlightFacilityId(f.id)}
+                        />
                       )}
 
-                      <RouteComparisonPanel
-                        routes={routes}
-                        recommended={recommended}
-                        selectedRouteId={focusRouteId ?? recommended.id}
-                        onSelectRoute={(r) => setFocusRouteId(r.id)}
-                      />
+                      {selectedFacility && source && (
+                        <RouteComparisonPanel
+                          routes={routes}
+                          recommended={recommended}
+                          selectedRouteId={focusRouteId ?? recommended.id}
+                          onSelectRoute={(r) => setFocusRouteId(r.id)}
+                          navigation={{
+                            origin: {
+                              latitude: source.latitude,
+                              longitude: source.longitude,
+                              label: source.placeName ?? source.name,
+                            },
+                            destination: {
+                              latitude: selectedFacility.latitude,
+                              longitude: selectedFacility.longitude,
+                              label: selectedFacility.name,
+                            },
+                          }}
+                          compact
+                        />
+                      )}
                     </>
                   )}
                 </motion.div>
@@ -564,7 +612,9 @@ export function EmergencyRouteWizard({
             </Button>
           )}
           {step === 3 && recommended && (
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close planner
+            </Button>
           )}
         </div>
       </DialogContent>

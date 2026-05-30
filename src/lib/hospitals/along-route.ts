@@ -1,10 +1,12 @@
 import { db } from "@/lib/prisma";
 import { haversineDistance } from "@/lib/geo/haversine";
 import type { RouteCoordinate } from "@/lib/routing/emergency-route";
-import type { HealthFacilityKind } from "@prisma/client";
+import type { HealthFacilityKind, Prisma } from "@prisma/client";
 
-/** Max distance from route polyline to show a facility (km). */
-export const ALONG_ROUTE_BUFFER_KM = 0.4;
+/** Default max distance from route polyline (km). */
+export const ALONG_ROUTE_BUFFER_KM = 1.5;
+
+const WIDE_BUFFER_KM = 3;
 
 export type AlongRouteFacility = {
   id: string;
@@ -21,6 +23,58 @@ export type AlongRouteFacility = {
   distanceFromRouteM: number;
   routeIds: string[];
 };
+
+const FACILITY_SELECT = {
+  id: true,
+  name: true,
+  kind: true,
+  latitude: true,
+  longitude: true,
+  phone: true,
+  address: true,
+  briefInfo: true,
+  hasIcu: true,
+  hasEmergency: true,
+} as const;
+
+type HospitalRow = {
+  id: string;
+  name: string;
+  kind: HealthFacilityKind;
+  latitude: number;
+  longitude: number;
+  phone: string | null;
+  address: string | null;
+  briefInfo: string | null;
+  hasIcu: boolean;
+  hasEmergency: boolean;
+  hasBloodBank: boolean;
+};
+
+async function fetchHospitalsInBounds(
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  excludeHospitalId?: string,
+): Promise<HospitalRow[]> {
+  const where: Prisma.HospitalWhereInput = {
+    latitude: { gte: bounds.minLat, lte: bounds.maxLat },
+    longitude: { gte: bounds.minLng, lte: bounds.maxLng },
+    ...(excludeHospitalId ? { id: { not: excludeHospitalId } } : {}),
+  };
+
+  try {
+    const rows = await db.hospital.findMany({
+      where,
+      select: { ...FACILITY_SELECT, hasBloodBank: true },
+    });
+    return rows;
+  } catch {
+    const rows = await db.hospital.findMany({ where, select: FACILITY_SELECT });
+    return rows.map((r) => ({
+      ...r,
+      hasBloodBank: r.kind === "BLOOD_BANK",
+    }));
+  }
+}
 
 function pointToSegmentDistanceKm(
   lat: number,
@@ -58,16 +112,18 @@ export function minDistanceToRouteKm(
   return min;
 }
 
-function corridorBounds(geometry: RouteCoordinate[], padDeg = 0.025) {
+function corridorBounds(geometries: RouteCoordinate[][], padDeg = 0.06) {
   let minLat = Infinity;
   let maxLat = -Infinity;
   let minLng = Infinity;
   let maxLng = -Infinity;
-  for (const [lng, lat] of geometry) {
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
+  for (const geometry of geometries) {
+    for (const [lng, lat] of geometry) {
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    }
   }
   return {
     minLat: minLat - padDeg,
@@ -77,57 +133,20 @@ function corridorBounds(geometry: RouteCoordinate[], padDeg = 0.025) {
   };
 }
 
-export async function findAlongRouteFacilities(params: {
-  routes: Array<{ id: string; geometry: RouteCoordinate[] }>;
-  excludeHospitalId?: string;
-  bufferKm?: number;
-}): Promise<AlongRouteFacility[]> {
-  const buffer = params.bufferKm ?? ALONG_ROUTE_BUFFER_KM;
-  if (params.routes.length === 0) return [];
-
-  const bounds = params.routes.reduce(
-    (acc, r) => {
-      const b = corridorBounds(r.geometry);
-      return {
-        minLat: Math.min(acc.minLat, b.minLat),
-        maxLat: Math.max(acc.maxLat, b.maxLat),
-        minLng: Math.min(acc.minLng, b.minLng),
-        maxLng: Math.max(acc.maxLng, b.maxLng),
-      };
-    },
-    { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity },
-  );
-
-  const facilities = await db.hospital.findMany({
-    where: {
-      latitude: { gte: bounds.minLat, lte: bounds.maxLat },
-      longitude: { gte: bounds.minLng, lte: bounds.maxLng },
-      ...(params.excludeHospitalId ? { id: { not: params.excludeHospitalId } } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      kind: true,
-      latitude: true,
-      longitude: true,
-      phone: true,
-      address: true,
-      briefInfo: true,
-      hasIcu: true,
-      hasBloodBank: true,
-      hasEmergency: true,
-    },
-  });
-
+function matchFacilitiesToRoutes(
+  hospitals: HospitalRow[],
+  routes: Array<{ id: string; geometry: RouteCoordinate[] }>,
+  bufferKm: number,
+): AlongRouteFacility[] {
   const byId = new Map<string, AlongRouteFacility>();
 
-  for (const f of facilities) {
+  for (const f of hospitals) {
     const routeIds: string[] = [];
     let minDistKm = Infinity;
 
-    for (const route of params.routes) {
+    for (const route of routes) {
       const d = minDistanceToRouteKm(f.latitude, f.longitude, route.geometry);
-      if (d <= buffer) {
+      if (d <= bufferKm) {
         routeIds.push(route.id);
         minDistKm = Math.min(minDistKm, d);
       }
@@ -153,4 +172,33 @@ export async function findAlongRouteFacilities(params: {
   }
 
   return [...byId.values()].sort((a, b) => a.distanceFromRouteM - b.distanceFromRouteM);
+}
+
+export function filterFacilitiesForRoute(
+  facilities: AlongRouteFacility[],
+  routeId: string | null,
+): AlongRouteFacility[] {
+  if (!routeId) return facilities;
+  return facilities.filter((f) => f.routeIds.includes(routeId));
+}
+
+export async function findAlongRouteFacilities(params: {
+  routes: Array<{ id: string; geometry: RouteCoordinate[] }>;
+  excludeHospitalId?: string;
+  bufferKm?: number;
+}): Promise<AlongRouteFacility[]> {
+  if (params.routes.length === 0) return [];
+
+  const geometries = params.routes.map((r) => r.geometry);
+  const bounds = corridorBounds(geometries);
+  const hospitals = await fetchHospitalsInBounds(bounds, params.excludeHospitalId);
+
+  const buffer = params.bufferKm ?? ALONG_ROUTE_BUFFER_KM;
+  let matched = matchFacilitiesToRoutes(hospitals, params.routes, buffer);
+
+  if (matched.length === 0 && hospitals.length > 0) {
+    matched = matchFacilitiesToRoutes(hospitals, params.routes, WIDE_BUFFER_KM);
+  }
+
+  return matched.slice(0, 24);
 }

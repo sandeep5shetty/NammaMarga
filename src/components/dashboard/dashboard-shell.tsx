@@ -1,8 +1,9 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { DashboardHeader, DashboardSearch } from "@/components/dashboard/dashboard-header";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { useDbUser } from "@/hooks/use-db-user";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/utils";
@@ -14,8 +15,9 @@ import {
   LayoutDashboard,
   LogOut,
   Map,
+  MapPin,
   Navigation,
-  Shield,
+  ShieldCheck,
   Trophy,
   Users,
 } from "lucide-react";
@@ -28,6 +30,8 @@ type ShellVariant = "citizen" | "bbmp";
 const citizenNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/reports", label: "My Reports", icon: ClipboardList },
+  { href: "/dashboard/nearby", label: "Nearby Issues", icon: MapPin },
+  { href: "/dashboard/verify", label: "Verify Fixes", icon: ShieldCheck },
   { href: "/dashboard/map", label: "Civic Map", icon: Map },
   { href: "/emergency-route", label: "Emergency Route", icon: Navigation },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
@@ -70,25 +74,23 @@ export function DashboardShell({
       {/* Sidebar */}
       <aside className="hidden md:flex w-[260px] flex-col border-r border-border bg-card/30">
         <div className="flex h-14 items-center px-5 border-b border-border">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <Shield className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-bold font-heading text-lg">
-              {variant === "bbmp" ? "BBMP Console" : "NammaMarg"}
-            </span>
-          </Link>
+          <BrandLogo
+            href="/"
+            wordmark={variant === "bbmp" ? "BBMP Console" : "NammaMarga"}
+            subtitle={variant === "bbmp" ? "Authority dashboard" : "Citizen dashboard"}
+            size="sm"
+            wordmarkClassName={variant === "bbmp" ? "text-amber-600 dark:text-amber-500" : undefined}
+          />
         </div>
 
-        <DashboardSearch />
-
-        <nav className="flex-1 px-3 py-2 space-y-0.5">
+        <nav className="flex-1 px-3 py-2 space-y-0.5 mt-2">
           {nav.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href ||
               (href !== "/dashboard" &&
                 href !== "/bbmp" &&
-                pathname.startsWith(href));
+                pathname.startsWith(href) &&
+                !(href === "/dashboard/verify" && pathname.startsWith("/verify/")));
             return (
               <Link
                 key={href}
@@ -109,12 +111,12 @@ export function DashboardShell({
 
         {/* Support card */}
         <div className="mx-3 mb-3 rounded-xl border border-border bg-muted/30 p-4">
-          <p className="text-sm font-medium">Need support?</p>
+          <p className="text-sm font-medium">Contact BBMP</p>
           <p className="text-xs text-muted-foreground mt-1 mb-3">
-            Contact BBMP helpline for urgent civic issues.
+            Official helpline 1533 · WhatsApp & zonal numbers
           </p>
           <Button size="sm" variant="outline" className="w-full" asChild>
-            <Link href="/resources/help">Contact us</Link>
+            <Link href="/resources/help">BBMP contact details</Link>
           </Button>
         </div>
 

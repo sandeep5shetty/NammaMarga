@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand/brand-logo";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/utils";
@@ -43,10 +44,7 @@ export function DashboardSidebar() {
   return (
     <aside className="hidden md:flex w-64 flex-col border-r border-border bg-muted/20 min-h-[calc(100vh-4rem)]">
       <div className="p-4 border-b border-border">
-        <Link href="/" className="text-lg font-bold font-heading">
-          NammaMarg
-        </Link>
-        <p className="text-xs text-muted-foreground mt-1">Citizen Dashboard</p>
+        <BrandLogo href="/" subtitle="Citizen dashboard" size="sm" />
       </div>
 
       <nav className="flex-1 p-3 space-y-1">
