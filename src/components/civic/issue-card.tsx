@@ -6,7 +6,6 @@ import { IssueUpvoteButton } from "@/components/civic/issue-upvote-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ISSUE_TYPE_LABELS, SEVERITY_COLORS } from "@/types/civic";
-import type { IssueStatus } from "@prisma/client";
 import type { IssueStatus, IssueType, Severity } from "@prisma/client";
 import { formatDistanceToNow } from "date-fns";
 import { MapPin } from "lucide-react";
