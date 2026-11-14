@@ -5,7 +5,7 @@ export const DEMO_CORRIDOR_ISSUE_PREFIX = "demo-corridor-";
 type DemoIssueRow = {
   id: string;
   title: string;
-  type: "POTHOLE";
+  type: string;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   latitude: number;
   longitude: number;
